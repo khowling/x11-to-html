@@ -5,23 +5,19 @@ services:
     build: .
     container_name: x11-web-bridge
     ports:
-      - "6080:6080"   # noVNC web interface
-      - "5901:5901"   # VNC port (optional, for direct VNC clients)
+      - "6080:6080"
+      - "5901:5901"
     environment:
-      - VNC_RESOLUTION=1024x768
+      - VNC_RESOLUTION=400x500
       - VNC_DEPTH=24
       - VNC_PORT=5901
       - WEB_PORT=6080
+      - SINGLE_APP=xcalc
     volumes:
-      # Optional: persist VNC settings
       - vnc_data:/home/vnc/.vnc
-      # Optional: mount local directory for file sharing
-      # - ./shared:/home/vnc/shared
     restart: unless-stopped
-    # Add capabilities for X11 applications that might need them
     cap_add:
       - SYS_ADMIN
-    # Optional: for better performance
     shm_size: 1gb
 
 volumes:

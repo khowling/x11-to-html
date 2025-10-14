@@ -1,0 +1,93 @@
+# Single Application Docker Compose Configurations
+
+# Copy one of these configurations to docker-compose.yml
+
+# =============================================================================
+# XTERM TERMINAL
+# =============================================================================
+version: '3.8'
+services:
+  x11-web-bridge:
+    build: .
+    container_name: x11-web-bridge-xterm
+    ports:
+      - "6080:6080"
+      - "5901:5901"
+    environment:
+      - VNC_RESOLUTION=800x600
+      - VNC_DEPTH=24
+      - VNC_PORT=5901
+      - WEB_PORT=6080
+      - SINGLE_APP=xterm -geometry 80x24 -fa 'Monospace' -fs 12
+    volumes:
+      - vnc_data:/home/vnc/.vnc
+    restart: unless-stopped
+    cap_add:
+      - SYS_ADMIN
+    shm_size: 1gb
+
+# =============================================================================
+# CALCULATOR
+# =============================================================================
+# Replace the above service with this:
+#   x11-web-bridge:
+#     build: .
+#     container_name: x11-web-bridge-calc
+#     ports:
+#       - "6080:6080"
+#       - "5901:5901"
+#     environment:
+#       - VNC_RESOLUTION=400x500
+#       - VNC_DEPTH=24
+#       - VNC_PORT=5901
+#       - WEB_PORT=6080
+#       - SINGLE_APP=xcalc
+#     volumes:
+#       - vnc_data:/home/vnc/.vnc
+#     restart: unless-stopped
+
+# =============================================================================
+# TEXT EDITOR (GEDIT)
+# =============================================================================
+# Replace the above service with this:
+#   x11-web-bridge:
+#     build: .
+#     container_name: x11-web-bridge-editor
+#     ports:
+#       - "6080:6080"
+#       - "5901:5901"
+#     environment:
+#       - VNC_RESOLUTION=1024x768
+#       - VNC_DEPTH=24
+#       - VNC_PORT=5901
+#       - WEB_PORT=6080
+#       - SINGLE_APP=gedit
+#     volumes:
+#       - vnc_data:/home/vnc/.vnc
+#     restart: unless-stopped
+
+# =============================================================================
+# FIREFOX BROWSER
+# =============================================================================
+# Replace the above service with this (requires additional packages in Dockerfile):
+#   x11-web-bridge:
+#     build: .
+#     container_name: x11-web-bridge-firefox
+#     ports:
+#       - "6080:6080"
+#       - "5901:5901"
+#     environment:
+#       - VNC_RESOLUTION=1280x720
+#       - VNC_DEPTH=24
+#       - VNC_PORT=5901
+#       - WEB_PORT=6080
+#       - SINGLE_APP=firefox --no-sandbox
+#     volumes:
+#       - vnc_data:/home/vnc/.vnc
+#     restart: unless-stopped
+#     cap_add:
+#       - SYS_ADMIN
+#     shm_size: 2gb
+
+volumes:
+  vnc_data:
