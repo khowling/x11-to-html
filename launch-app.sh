@@ -1,35 +1,16 @@
 #!/bin/bash
 
-# Quick app launcher for single application mode
+# X11 Web Bridge with external X clients
 
-APP="$1"
-RESOLUTION="${2:-800x600}"
+RESOLUTION="${1:-1024x768}"
 
-if [ -z "$APP" ]; then
-    echo "Usage: $0 <application> [resolution]"
-    echo ""
-    echo "Examples:"
-    echo "  $0 xterm 800x600"
-    echo "  $0 xcalc 400x500"
-    echo "  $0 gedit 1024x768"
-    echo "  $0 'firefox --no-sandbox' 1280x720"
-    echo ""
-    echo "Available applications in container:"
-    echo "  - xterm (terminal)"
-    echo "  - xcalc (calculator)"
-    echo "  - xclock (clock)"
-    echo "  - gedit (text editor)"
-    echo "  - firefox (web browser - needs additional setup)"
-    exit 1
-fi
-
-echo "🚀 Starting container with single application: $APP"
-echo "📏 Resolution: $RESOLUTION"
+echo "🚀 Starting X11 Web Bridge for external X clients"
+echo " Resolution: $RESOLUTION"
 
 # Stop any existing container
-./stop-docker-server.sh
+docker-compose down 2>/dev/null
 
-# Update docker-compose.yml with the specified app
+# Update docker-compose.yml with the specified resolution
 cat > docker-compose.yml << EOF
 version: '3.8'
 
@@ -38,14 +19,14 @@ services:
     build: .
     container_name: x11-web-bridge
     ports:
-      - "6080:6080"
-      - "5901:5901"
+      - "6080:6080"   # noVNC web interface
+      - "5901:5901"   # VNC port
+      - "6001:6001"   # X11 display port
     environment:
       - VNC_RESOLUTION=$RESOLUTION
       - VNC_DEPTH=24
       - VNC_PORT=5901
       - WEB_PORT=6080
-      - SINGLE_APP=$APP
     volumes:
       - vnc_data:/home/vnc/.vnc
     restart: unless-stopped
@@ -60,8 +41,16 @@ EOF
 echo "✅ Updated docker-compose.yml"
 
 # Start the container
-./start-docker-server.sh
+docker-compose up --build -d
 
 echo ""
-echo "🌐 Access your application at: http://localhost:6080/vnc.html"
+echo "🌐 Web Interface: http://localhost:6080/vnc.html"
 echo "🔐 Password: vncpass"
+echo ""
+echo "📱 To run X applications on your host machine:"
+echo "   export DISPLAY=localhost:1"
+echo "   xcalc &"
+echo "   xterm &"
+echo "   firefox &"
+echo ""
+echo "🛑 To stop: docker-compose down"

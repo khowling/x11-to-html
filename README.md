@@ -1,16 +1,19 @@
 # X11 Web Bridge
 
-Run X11 applications directly in your web browser using Docker + TigerVNC + noVNC.
+Run X11 applications from your host machine and display them in your web browser using Docker + TigerVNC + noVNC.
 
 ## Quick Start
 
 ```bash
-# Launch any X11 application
-./launch-app.sh xcalc 400x500          # Calculator
-./launch-app.sh xterm 800x600          # Terminal  
-./launch-app.sh xclock 300x300         # Clock
+# 1. Start the X11 display server
+./launch-app.sh 1920x1080              # Full HD resolution
 
-# Access via browser
+# 2. Run X11 applications on your host machine
+./run-app.sh xcalc                     # Calculator
+./run-app.sh firefox fullscreen       # Firefox in kiosk mode
+./run-fullscreen.sh firefox           # Dedicated fullscreen script
+
+# 3. Access via web browser
 # URL: http://localhost:6080/vnc.html
 # Password: vncpass
 ```
@@ -19,51 +22,70 @@ Run X11 applications directly in your web browser using Docker + TigerVNC + noVN
 
 ## Features
 
-✅ **Single Application Mode** - Clean interface, no desktop clutter  
-✅ **Docker Containerized** - Easy deployment, no host dependencies  
-✅ **Web Access** - Works on any device with a browser  
-✅ **Customizable** - Adjustable resolution and applications
+✅ **Host-based X Clients** - Run applications on your host machine  
+✅ **Containerized Display** - X11 display server runs in Docker  
+✅ **Web Access** - View and interact through any web browser  
+✅ **Clean Interface** - No desktop environment, just your applications
+
+## Fullscreen Applications
+
+```bash
+# Run apps in fullscreen/kiosk mode
+./run-fullscreen.sh firefox           # Firefox kiosk mode
+./run-fullscreen.sh chromium          # Chromium kiosk mode
+./run-fullscreen.sh code              # VS Code fullscreen
+
+# Or use regular script with fullscreen flag
+./run-app.sh firefox fullscreen
+
+# Change display resolution
+./set-resolution.sh 1920x1080         # Full HD
+./set-resolution.sh 2560x1440         # 2K resolution
+```
 
 ## Manual Usage
 
 ```bash
-# Start specific application
-./launch-app.sh <app> [resolution]
+# Start X11 display server
+./launch-app.sh [resolution]
+
+# Run applications on host
+export DISPLAY=localhost:1
+firefox --kiosk &                     # Fullscreen Firefox
+xcalc &
+
+# Or use helper scripts
+./run-app.sh xcalc
+./run-fullscreen.sh firefox
 
 # Stop container  
-./stop-docker-server.sh
+docker-compose down
 
 # Check status
 ./status.sh
 ```
 
-## Available Applications
+## How It Works
 
-- `xterm` - Terminal
-- `xcalc` - Calculator  
-- `xclock` - Clock
-- `gedit` - Text editor
-
-## Customization
-
-Edit `docker-compose.yml` to change defaults:
-```yaml
-environment:
-  - SINGLE_APP=your-app
-  - VNC_RESOLUTION=1024x768
-```
+1. **Docker Container** provides the X11 display server (Xvnc)
+2. **Host Applications** connect to `DISPLAY=localhost:1`  
+3. **noVNC** streams the display to your web browser
+4. **You interact** with host apps through the browser
 
 ## Architecture
 
 ```
-Browser → noVNC → websockify → VNC Server → X11 App
+Host X11 Apps → Docker Xvnc Server → websockify → noVNC → Browser
+     ↑                    ↑
+  localhost:1        Container :1
 ```
 
 ## Files
 
-- `launch-app.sh` - Main script to run applications
-- `Dockerfile` - Container definition
-- `docker-compose.yml` - Current app configuration
-- `docker-compose-examples.yml` - Example configurations
-- `start-docker-server.sh` / `stop-docker-server.sh` - Container management
+- `launch-app.sh` - Start X11 display server container
+- `run-app.sh` - Helper to run X11 apps on host
+- `run-fullscreen.sh` - Run apps in fullscreen/kiosk mode
+- `set-resolution.sh` - Change display resolution
+- `Dockerfile` - Container definition with Xvnc server
+- `docker-compose.yml` - Container configuration
 - `status.sh` - Monitor running services

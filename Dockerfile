@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     xterm \
     fluxbox \
     supervisor \
+    xdotool \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -32,13 +33,14 @@ RUN mkdir -p ~/.vnc && \
     echo "vncpass" | vncpasswd -f > ~/.vnc/passwd && \
     chmod 600 ~/.vnc/passwd
 
-# Create VNC startup script for single app mode
+# Create VNC startup script for external X clients
 RUN echo '#!/bin/bash' > ~/.vnc/xstartup && \
     echo 'export XKL_XMODMAP_DISABLE=1' >> ~/.vnc/xstartup && \
     echo 'unset SESSION_MANAGER' >> ~/.vnc/xstartup && \
     echo 'unset DBUS_SESSION_BUS_ADDRESS' >> ~/.vnc/xstartup && \
     echo 'xsetroot -solid grey' >> ~/.vnc/xstartup && \
-    echo 'exec $SINGLE_APP' >> ~/.vnc/xstartup && \
+    echo '# X clients will connect from host machine' >> ~/.vnc/xstartup && \
+    echo 'while true; do sleep 1; done' >> ~/.vnc/xstartup && \
     chmod +x ~/.vnc/xstartup
 
 # Switch back to root for supervisor setup
@@ -60,7 +62,7 @@ ENV VNC_RESOLUTION=1024x768
 ENV VNC_DEPTH=24
 ENV VNC_PORT=5901
 ENV WEB_PORT=6080
-ENV SINGLE_APP=xterm
+
 
 # Start supervisor
 CMD ["/usr/local/bin/docker-entrypoint.sh"]

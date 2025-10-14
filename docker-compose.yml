@@ -5,14 +5,14 @@ services:
     build: .
     container_name: x11-web-bridge
     ports:
-      - "6080:6080"
-      - "5901:5901"
+      - "6080:6080"   # noVNC web interface
+      - "5901:5901"   # VNC port
+      - "6001:6001"   # X11 display port
     environment:
-      - VNC_RESOLUTION=400x500
+      - VNC_RESOLUTION=1920x1080
       - VNC_DEPTH=24
       - VNC_PORT=5901
       - WEB_PORT=6080
-      - SINGLE_APP=xcalc
     volumes:
       - vnc_data:/home/vnc/.vnc
     restart: unless-stopped

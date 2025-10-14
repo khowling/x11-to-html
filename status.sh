@@ -24,16 +24,16 @@ if docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -q "x11
     echo "🔧 Quick Commands:"
     echo "   Test X11: docker exec -e DISPLAY=:1 x11-web-bridge xclock"
     echo "   Shell:     docker exec -it x11-web-bridge bash"
-    echo "   Stop:      ./stop-docker-server.sh"
+    echo "   Stop:      docker-compose down"
     
 else
     echo "❌ Docker container not running"
     
     # Check if image exists
     if docker images | grep -q "x11html-take2"; then
-        echo "   (Image exists, use ./start-docker-server.sh to start)"
+        echo "   (Image exists, use ./launch-app.sh to start)"
     else
-        echo "   (Image not built, use ./start-docker-server.sh to build and start)"
+        echo "   (Image not built, use ./launch-app.sh to build and start)"
     fi
 fi
 
