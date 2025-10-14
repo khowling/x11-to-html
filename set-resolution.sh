@@ -28,7 +28,7 @@ echo "🖥️  Changing resolution to $RESOLUTION..."
 docker-compose down 2>/dev/null
 
 # Start with new resolution
-./launch-app.sh "$RESOLUTION"
+./start-display.sh "$RESOLUTION"
 
 echo "✅ Display resolution changed to $RESOLUTION"
 echo "🌐 Access at: http://localhost:6080/vnc.html"

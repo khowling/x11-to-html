@@ -22,7 +22,7 @@ fi
 # Check if container is running
 if ! docker ps | grep -q "x11-web-bridge"; then
     echo "❌ Container not running. Start it first:"
-    echo "   ./launch-app.sh"
+    echo "   ./start-display.sh"
     exit 1
 fi
 

@@ -6,11 +6,14 @@ Run X11 applications from your host machine and display them in your web browser
 
 ```bash
 # 1. Start the X11 display server
-./launch-app.sh 1920x1080              # Full HD resolution
+1. **Start the X11 display server**:
+   ```bash
+   ./start-display.sh 1920x1080
+   ```
 
 # 2. Run X11 applications on your host machine
-./run-app.sh xcalc                     # Calculator
-./run-app.sh firefox fullscreen       # Firefox in kiosk mode
+./run-x11-app.sh xcalc                     # Calculator
+./run-x11-app.sh firefox fullscreen       # Firefox in kiosk mode
 ./run-fullscreen.sh firefox           # Dedicated fullscreen script
 
 # 3. Access via web browser
@@ -36,7 +39,7 @@ Run X11 applications from your host machine and display them in your web browser
 ./run-fullscreen.sh code              # VS Code fullscreen
 
 # Or use regular script with fullscreen flag
-./run-app.sh firefox fullscreen
+./run-x11-app.sh firefox fullscreen
 
 # Change display resolution
 ./set-resolution.sh 1920x1080         # Full HD
@@ -47,7 +50,7 @@ Run X11 applications from your host machine and display them in your web browser
 
 ```bash
 # Start X11 display server
-./launch-app.sh [resolution]
+./start-display.sh [resolution]
 
 # Run applications on host
 export DISPLAY=localhost:1
@@ -55,7 +58,7 @@ firefox --kiosk &                     # Fullscreen Firefox
 xcalc &
 
 # Or use helper scripts
-./run-app.sh xcalc
+./run-x11-app.sh xcalc
 ./run-fullscreen.sh firefox
 
 # Stop container  
@@ -74,16 +77,42 @@ docker-compose down
 
 ## Architecture
 
-```
-Host X11 Apps → Docker Xvnc Server → websockify → noVNC → Browser
-     ↑                    ↑
-  localhost:1        Container :1
+```mermaid
+flowchart LR
+    A[Host X11 Apps<br/>firefox, xcalc, etc.] -->|DISPLAY=localhost:1| B[Docker Container]
+    
+    subgraph B[" Docker Container "]
+        C[Xvnc Server<br/>Display :1<br/>Port 5901]
+        D[websockify<br/>VNC ↔ WebSocket<br/>Port 6080]
+        E[noVNC Client<br/>JavaScript]
+        
+        C --> D
+        D --> E
+    end
+    
+    E -->|HTTP/WebSocket| F[Web Browser<br/>Any Device]
+    
+    subgraph G[" Supervisor Process Management "]
+        H[supervisord<br/>PID 1]
+        I[program:vnc<br/>Auto-restart]
+        J[program:novnc<br/>Auto-restart]
+        
+        H --> I
+        H --> J
+        I -.-> C
+        J -.-> D
+    end
+    
+    style A fill:#e1f5fe
+    style F fill:#f3e5f5
+    style B fill:#fff3e0
+    style G fill:#f1f8e9
 ```
 
 ## Files
 
-- `launch-app.sh` - Start X11 display server container
-- `run-app.sh` - Helper to run X11 apps on host
+- `start-display.sh` - Start X11 display server container
+- `run-x11-app.sh` - Helper to run X11 apps on host
 - `run-fullscreen.sh` - Run apps in fullscreen/kiosk mode
 - `set-resolution.sh` - Change display resolution
 - `Dockerfile` - Container definition with Xvnc server

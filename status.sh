@@ -31,9 +31,9 @@ else
     
     # Check if image exists
     if docker images | grep -q "x11html-take2"; then
-        echo "   (Image exists, use ./launch-app.sh to start)"
+        echo "   (Image exists, use ./start-display.sh to start)"
     else
-        echo "   (Image not built, use ./launch-app.sh to build and start)"
+        echo "   (Image not built, use ./start-display.sh to build and start)"
     fi
 fi
 
