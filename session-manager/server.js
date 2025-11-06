@@ -7,6 +7,7 @@ const path = require('path');
 const authRoutes = require('./routes/auth');
 const sessionRoutes = require('./routes/sessions');
 const adminRoutes = require('./routes/admin');
+const proxyRoutes = require('./routes/proxy');
 const { isAuthenticated, isAdmin } = require('./middleware/auth');
 const SessionManager = require('./services/sessionManager');
 
@@ -55,6 +56,7 @@ app.locals.sessionManager = sessionManager;
 app.use('/auth', authRoutes);
 app.use('/sessions', isAuthenticated, sessionRoutes);
 app.use('/admin', isAuthenticated, isAdmin, adminRoutes);
+app.use('/proxy', proxyRoutes); // Proxy route authenticates via bearer token, not session
 
 // Error handling
 app.use((err, req, res, next) => {
@@ -65,6 +67,12 @@ app.use((err, req, res, next) => {
 const server = app.listen(PORT, () => {
     console.log(`Session Manager running on http://localhost:${PORT}`);
 });
+
+// Store server reference for WebSocket handling
+app.set('server', server);
+
+// Setup WebSocket proxy handling
+proxyRoutes.ws(app);
 
 // Graceful shutdown handler
 async function gracefulShutdown(signal) {

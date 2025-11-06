@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { removeProxyForSession } = require('./proxy');
 
 // Get user's all sessions
 router.get('/', async (req, res) => {
@@ -47,6 +48,10 @@ router.get('/create', async (req, res) => {
         sendProgress('init', 'Initializing session...');
         
         const userSession = await sessionManager.createSessionWithProgress(userId, username, sendProgress);
+        
+        // Update session with proxied URL (no token needed - uses session cookie)
+        // Add path parameter to tell noVNC where the WebSocket endpoint is
+        userSession.proxyUrl = `http://${process.env.HOST || 'localhost'}:${process.env.PORT || 3000}/proxy/${userSession.sessionId}/vnc.html?autoconnect=true&resize=scale&path=proxy/${userSession.sessionId}/websockify`;
         
         sendProgress('complete', 'Session created successfully!');
         sendComplete(userSession);
@@ -98,6 +103,9 @@ router.delete('/:sessionId', async (req, res) => {
         const sessionManager = req.app.locals.sessionManager;
         const userId = req.session.user.id;
         const sessionId = req.params.sessionId;
+        
+        // Remove proxy from cache
+        removeProxyForSession(sessionId);
         
         const result = await sessionManager.destroySession(userId, sessionId);
         

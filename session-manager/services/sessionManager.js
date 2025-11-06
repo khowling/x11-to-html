@@ -585,6 +585,29 @@ class SessionManager {
         
         console.log('Session cleanup complete - all sessions destroyed and containers removed');
     }
+
+    /**
+     * Cleanup session after xterm exit (called by exit handler)
+     */
+    async cleanupAfterXtermExit(sessionId, sessionData, xtermPid, code, signal) {
+        console.log(`xterm process ${xtermPid} exited (code: ${code}, signal: ${signal})`);
+        console.log(`Auto-cleanup: destroying session ${sessionId} for user ${sessionData.username}`);
+        
+        try {
+            // Stop and remove container
+            const container = docker.getContainer(sessionData.containerId);
+            await container.stop({ t: 5 });
+            console.log(`Stopped container ${sessionData.containerName}`);
+            
+            // Remove from tracking
+            this.removeSession(sessionId);
+            console.log(`Session ${sessionId} cleaned up after xterm exit`);
+        } catch (error) {
+            console.error(`Error during auto-cleanup of session ${sessionId}:`, error.message);
+            // Still remove from tracking even if container cleanup fails
+            this.removeSession(sessionId);
+        }
+    }
 }
 
 module.exports = SessionManager;

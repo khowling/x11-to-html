@@ -76,7 +76,11 @@
                 return;
             }
             
-            const html = sessions.map(session => `
+            const html = sessions.map(session => {
+                // Use proxyUrl if available, otherwise fall back to direct url
+                const sessionUrl = session.proxyUrl || session.url;
+                
+                return `
                 <div class="session-card">
                     <h3>Session ${session.sessionId.split('-').pop()}</h3>
                     <div class="session-details">
@@ -85,7 +89,7 @@
                         <p><strong>Created:</strong> ${new Date(session.createdAt).toLocaleString()}</p>
                     </div>
                     <div class="session-actions">
-                        <button class="btn btn-success" onclick="openSession('${session.url}')">Open</button>
+                        <button class="btn btn-success" onclick="openSession('${sessionUrl}')">Open</button>
                         <button class="btn btn-danger" onclick="deleteSession('${session.sessionId}')">Delete</button>
                     </div>
                     <div class="session-tech-info">
@@ -103,7 +107,8 @@
                         </details>
                     </div>
                 </div>
-            `).join('');
+                `;
+            }).join('');
             
             sessionsList.innerHTML = html;
         }
@@ -162,9 +167,10 @@
                         setTimeout(() => {
                             overlay.classList.remove('active');
                             loadSessions();
-                            // Auto-open the new session
-                            if (sessionData && sessionData.url) {
-                                window.open(sessionData.url, '_blank');
+                            // Auto-open the new session using proxyUrl if available
+                            const openUrl = sessionData.proxyUrl || sessionData.url;
+                            if (openUrl) {
+                                window.open(openUrl, '_blank');
                             }
                             btn.disabled = false;
                         }, 1000);
