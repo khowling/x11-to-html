@@ -5,10 +5,20 @@ const docker = new Docker();
 
 class SessionManager {
     constructor() {
-        // In-memory store for sessions (in production, use Redis or database)
+        // Store sessions by sessionId, with userId index
+        // sessions: Map<sessionId, sessionObject>
+        // userSessions: Map<userId, Set<sessionId>>
         this.sessions = new Map();
+        this.userSessions = new Map();
         this.basePort = parseInt(process.env.X11_BRIDGE_BASE_PORT) || 6080;
         this.bridgeImage = process.env.X11_BRIDGE_IMAGE || 'x11-web-bridge';
+    }
+
+    /**
+     * Generate a unique session ID
+     */
+    generateSessionId() {
+        return `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     }
 
     /**
@@ -28,12 +38,29 @@ class SessionManager {
     }
 
     /**
-     * Get user's existing session
+     * Get all sessions for a user
      */
-    async getUserSession(userId) {
-        const session = this.sessions.get(userId);
+    getUserSessions(userId) {
+        const sessionIds = this.userSessions.get(userId) || new Set();
+        const userSessions = [];
         
-        if (!session) {
+        for (const sessionId of sessionIds) {
+            const session = this.sessions.get(sessionId);
+            if (session) {
+                userSessions.push(session);
+            }
+        }
+        
+        return userSessions;
+    }
+
+    /**
+     * Get a specific session by ID (only if it belongs to the user)
+     */
+    async getUserSession(userId, sessionId) {
+        const session = this.sessions.get(sessionId);
+        
+        if (!session || session.userId !== userId) {
             return null;
         }
 
@@ -46,13 +73,30 @@ class SessionManager {
                 return session;
             } else {
                 // Container stopped, clean up
-                this.sessions.delete(userId);
+                this.removeSession(sessionId);
                 return null;
             }
         } catch (error) {
             // Container doesn't exist, clean up
-            this.sessions.delete(userId);
+            this.removeSession(sessionId);
             return null;
+        }
+    }
+
+    /**
+     * Remove a session from tracking
+     */
+    removeSession(sessionId) {
+        const session = this.sessions.get(sessionId);
+        if (session) {
+            const userSessionIds = this.userSessions.get(session.userId);
+            if (userSessionIds) {
+                userSessionIds.delete(sessionId);
+                if (userSessionIds.size === 0) {
+                    this.userSessions.delete(session.userId);
+                }
+            }
+            this.sessions.delete(sessionId);
         }
     }
 
@@ -60,12 +104,13 @@ class SessionManager {
      * Create a new session for a user
      */
     async createSession(userId, username) {
-        console.log(`Creating session for user: ${username} (${userId})`);
+        const sessionId = this.generateSessionId();
+        console.log(`Creating session ${sessionId} for user: ${username} (${userId})`);
 
         // Get available port
         const port = await this.getNextAvailablePort();
         const displayNum = port - this.basePort;
-        const containerName = `x11-bridge-${userId.replace(/[^a-zA-Z0-9]/g, '-')}`;
+        const containerName = `x11-bridge-${sessionId}`;
 
         try {
             // Check if a container with this name already exists and remove it
@@ -89,26 +134,28 @@ class SessionManager {
             // Launch x11-web-bridge container
             console.log(`Starting container ${containerName} on port ${port}`);
             
-            const x11Port = 6000 + displayNum + 1; // X11 display :1 = port 6001
+            // X11 port calculation: container always uses :1 (port 6001), map to unique host port
+            const x11Port = 6001 + displayNum;
             
             const container = await docker.createContainer({
                 Image: this.bridgeImage,
                 name: containerName,
                 Env: [
                     `DISPLAY=:1`,
-                    `VNC_PORT=${5900 + displayNum}`,
-                    `NOVNC_PORT=${port}`,
+                    `VNC_PORT=5901`,
+                    `WEB_PORT=6080`,  // Container internal noVNC port (fixed)
                     `USER_ID=${userId}`,
-                    `USERNAME=${username}`
+                    `USERNAME=${username}`,
+                    `SESSION_ID=${sessionId}`
                 ],
                 ExposedPorts: {
-                    [`${port}/tcp`]: {},
-                    '6001/tcp': {}  // Expose X11 port for display :1
+                    '6080/tcp': {},  // noVNC web port inside container (fixed at 6080)
+                    '6001/tcp': {}   // X11 port for display :1 inside container
                 },
                 HostConfig: {
                     PortBindings: {
-                        [`${port}/tcp`]: [{ HostPort: `${port}` }],
-                        '6001/tcp': [{ HostPort: `${x11Port}` }]
+                        '6080/tcp': [{ HostPort: `${port}` }],  // Map container's 6080 to dynamic host port
+                        '6001/tcp': [{ HostPort: `${x11Port}` }]  // Map container's 6001 to unique host port
                     },
                     AutoRemove: true,
                     ShmSize: 268435456 // 256MB shared memory
@@ -116,7 +163,8 @@ class SessionManager {
                 Labels: {
                     'x11-session-manager': 'true',
                     'user-id': userId,
-                    'username': username
+                    'username': username,
+                    'session-id': sessionId
                 }
             });
 
@@ -128,13 +176,15 @@ class SessionManager {
             await new Promise(resolve => setTimeout(resolve, 5000));
 
             // Fork xterm process on host, connecting to container's X11 display
-            // The container's VNC server is running on DISPLAY :1 and is accessible via TCP
-            console.log(`Starting xterm process for display localhost:${x11Port}`);
+            // Container port 6001 is mapped to host port x11Port
+            // X11 display number = port - 6000, so for x11Port 6001 -> display 1, 6002 -> display 2, etc.
+            const displayNumber = x11Port - 6000;
+            console.log(`Starting xterm process for display localhost:${displayNumber} (port ${x11Port})`);
             const xtermProcess = spawn('xterm', [
-                '-display', `localhost:${displayNum + 1}`,  // Display :1 for first container
+                '-display', `localhost:${displayNumber}`,
                 '-fa', 'Monospace',
                 '-fs', '12',
-                '-title', `${username}'s Session`
+                '-title', `${username}'s Session ${sessionId}`
             ], {
                 detached: true,
                 stdio: 'ignore'
@@ -143,18 +193,27 @@ class SessionManager {
             xtermProcess.unref();
 
             const session = {
+                sessionId,
                 userId,
                 username,
                 containerId: container.id,
                 containerName,
                 port,
                 displayNum,
+                x11Port,
                 xtermPid: xtermProcess.pid,
                 url: `http://${process.env.HOST || 'localhost'}:${port}/vnc.html`,
                 createdAt: new Date()
             };
 
-            this.sessions.set(userId, session);
+            this.sessions.set(sessionId, session);
+            
+            // Track user sessions
+            if (!this.userSessions.has(userId)) {
+                this.userSessions.set(userId, new Set());
+            }
+            this.userSessions.get(userId).add(sessionId);
+            
             console.log(`Session created for ${username}:`, session);
 
             return session;
@@ -174,17 +233,23 @@ class SessionManager {
     }
 
     /**
-     * Destroy a user's session
+     * Destroy a specific session (only if it belongs to the user)
      */
-    async destroySession(userId) {
-        const session = this.sessions.get(userId);
+    async destroySession(userId, sessionId) {
+        const session = this.sessions.get(sessionId);
         
         if (!session) {
-            console.log(`No session found for user ${userId}`);
-            return;
+            console.log(`No session found with id ${sessionId}`);
+            return false;
         }
 
-        console.log(`Destroying session for user: ${session.username}`);
+        // Security check: ensure session belongs to user
+        if (session.userId !== userId) {
+            console.log(`Session ${sessionId} does not belong to user ${userId}`);
+            return false;
+        }
+
+        console.log(`Destroying session ${sessionId} for user: ${session.username}`);
 
         try {
             // Kill xterm process
@@ -207,17 +272,29 @@ class SessionManager {
             console.error('Error destroying session:', error);
         }
 
-        this.sessions.delete(userId);
-        console.log(`Session destroyed for user ${userId}`);
+        this.removeSession(sessionId);
+        console.log(`Session ${sessionId} destroyed`);
+        return true;
     }
 
     /**
-     * Get all active sessions
+     * Destroy all sessions for a user
+     */
+    async destroyUserSessions(userId) {
+        const sessionIds = Array.from(this.userSessions.get(userId) || []);
+        const results = await Promise.all(
+            sessionIds.map(sessionId => this.destroySession(userId, sessionId))
+        );
+        return results.filter(r => r).length;
+    }
+
+    /**
+     * Get all active sessions (admin only - returns all users' sessions)
      */
     async getAllSessions() {
         const sessions = [];
         
-        for (const [userId, session] of this.sessions.entries()) {
+        for (const [sessionId, session] of this.sessions.entries()) {
             try {
                 const container = docker.getContainer(session.containerId);
                 const info = await container.inspect();
@@ -229,7 +306,7 @@ class SessionManager {
                 });
             } catch (error) {
                 // Container doesn't exist anymore
-                this.sessions.delete(userId);
+                this.removeSession(sessionId);
             }
         }
 
@@ -262,12 +339,13 @@ class SessionManager {
     async destroyAllSessions() {
         console.log(`Cleaning up ${this.sessions.size} active sessions...`);
         
-        const userIds = Array.from(this.sessions.keys());
-        const cleanupPromises = userIds.map(userId => 
-            this.destroySession(userId).catch(error => {
-                console.error(`Error cleaning up session for ${userId}:`, error.message);
-            })
-        );
+        const sessionIds = Array.from(this.sessions.keys());
+        const cleanupPromises = sessionIds.map(sessionId => {
+            const session = this.sessions.get(sessionId);
+            return this.destroySession(session.userId, sessionId).catch(error => {
+                console.error(`Error cleaning up session ${sessionId}:`, error.message);
+            });
+        });
 
         await Promise.all(cleanupPromises);
         

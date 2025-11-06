@@ -73,6 +73,7 @@
                     <table>
                         <thead>
                             <tr>
+                                <th>Session ID</th>
                                 <th>User</th>
                                 <th>Username</th>
                                 <th>Port</th>
@@ -84,13 +85,14 @@
                         <tbody>
                             ${data.sessions.map(session => `
                                 <tr>
+                                    <td>${session.sessionId.split('-').pop()}</td>
                                     <td>${session.userId}</td>
                                     <td>${session.username}</td>
                                     <td>${session.port}</td>
                                     <td><span class="status-${session.status || 'running'}">${session.status || 'running'}</span></td>
                                     <td>${new Date(session.createdAt).toLocaleString()}</td>
                                     <td>
-                                        <button class="btn btn-small btn-danger" onclick="killSession('${session.userId}', '${session.username}')">
+                                        <button class="btn btn-small btn-danger" onclick="killSession('${session.sessionId}', '${session.username}')">
                                             Kill
                                         </button>
                                         <a href="${session.url}" target="_blank" class="btn btn-small btn-secondary">View</a>
@@ -109,20 +111,20 @@
             }
         }
         
-        async function killSession(userId, username) {
-            if (!confirm(`Are you sure you want to kill the session for ${username}?`)) {
+        async function killSession(sessionId, username) {
+            if (!confirm(`Are you sure you want to kill session ${sessionId} for ${username}?`)) {
                 return;
             }
             
             try {
-                const response = await fetch(`/admin/sessions/${encodeURIComponent(userId)}`, {
+                const response = await fetch(`/admin/sessions/${sessionId}`, {
                     method: 'DELETE'
                 });
                 
                 const data = await response.json();
                 
                 if (data.success) {
-                    alert(`Session for ${username} has been terminated`);
+                    alert(`Session ${sessionId} for ${username} has been terminated`);
                     await refresh();
                 } else {
                     alert('Error killing session');

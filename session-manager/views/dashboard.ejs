@@ -22,69 +22,59 @@
     
     <main class="container">
         <div class="dashboard">
-            <h2>Your X11 Session</h2>
+            <h2>Your X11 Sessions</h2>
             
-            <div id="session-status" class="session-status">
-                <div class="loading">Checking session status...</div>
+            <div class="session-controls">
+                <button id="create-session-btn" class="btn btn-primary btn-large">Create New Session</button>
+                <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
             </div>
             
-            <div id="session-controls" class="session-controls" style="display: none;">
-                <button id="create-session-btn" class="btn btn-primary btn-large">Start New Session</button>
-                <button id="open-session-btn" class="btn btn-success btn-large" style="display: none;">Open Session</button>
-                <button id="destroy-session-btn" class="btn btn-danger" style="display: none;">End Session</button>
-            </div>
-            
-            <div id="session-info" class="session-info" style="display: none;">
-                <h3>Session Details</h3>
-                <div id="session-details"></div>
+            <div id="sessions-list" class="sessions-list">
+                <div class="loading">Loading sessions...</div>
             </div>
         </div>
     </main>
     
     <script>
-        let sessionData = null;
+        let sessions = [];
         
-        async function checkSessionStatus() {
+        async function loadSessions() {
             try {
-                const response = await fetch('/sessions/status');
+                const response = await fetch('/sessions');
                 const data = await response.json();
-                
-                document.getElementById('session-status').style.display = 'none';
-                document.getElementById('session-controls').style.display = 'block';
-                
-                if (data.exists && data.session) {
-                    sessionData = data.session;
-                    showSessionActive();
-                } else {
-                    showSessionInactive();
-                }
+                sessions = data.sessions || [];
+                displaySessions();
             } catch (error) {
-                console.error('Error checking session:', error);
-                document.getElementById('session-status').innerHTML = 
-                    '<div class="error">Error checking session status</div>';
+                console.error('Error loading sessions:', error);
+                document.getElementById('sessions-list').innerHTML = 
+                    '<div class="error">Error loading sessions</div>';
             }
         }
         
-        function showSessionActive() {
-            document.getElementById('create-session-btn').style.display = 'none';
-            document.getElementById('open-session-btn').style.display = 'inline-block';
-            document.getElementById('destroy-session-btn').style.display = 'inline-block';
-            document.getElementById('session-info').style.display = 'block';
+        function displaySessions() {
+            const sessionsList = document.getElementById('sessions-list');
             
-            const details = document.getElementById('session-details');
-            details.innerHTML = `
-                <p><strong>Status:</strong> <span class="status-active">Active</span></p>
-                <p><strong>URL:</strong> <a href="${sessionData.url}" target="_blank">${sessionData.url}</a></p>
-                <p><strong>Port:</strong> ${sessionData.port}</p>
-                <p><strong>Created:</strong> ${new Date(sessionData.createdAt).toLocaleString()}</p>
-            `;
-        }
-        
-        function showSessionInactive() {
-            document.getElementById('create-session-btn').style.display = 'inline-block';
-            document.getElementById('open-session-btn').style.display = 'none';
-            document.getElementById('destroy-session-btn').style.display = 'none';
-            document.getElementById('session-info').style.display = 'none';
+            if (sessions.length === 0) {
+                sessionsList.innerHTML = '<p class="no-data">No active sessions. Click "Create New Session" to get started.</p>';
+                return;
+            }
+            
+            const html = sessions.map(session => `
+                <div class="session-card">
+                    <h3>Session ${session.sessionId.split('-').pop()}</h3>
+                    <div class="session-details">
+                        <p><strong>Status:</strong> <span class="status-active">Active</span></p>
+                        <p><strong>Port:</strong> ${session.port}</p>
+                        <p><strong>Created:</strong> ${new Date(session.createdAt).toLocaleString()}</p>
+                    </div>
+                    <div class="session-actions">
+                        <button class="btn btn-success" onclick="openSession('${session.url}')">Open</button>
+                        <button class="btn btn-danger" onclick="deleteSession('${session.sessionId}')">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+            
+            sessionsList.innerHTML = html;
         }
         
         async function createSession() {
@@ -97,74 +87,54 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    if (data.exists) {
-                        // Session already exists
-                        window.open(data.url, '_blank');
-                        await checkSessionStatus();
-                    } else {
-                        // New session created
-                        sessionData = data.session;
-                        showSessionActive();
-                        // Auto-open the session
-                        window.open(sessionData.url, '_blank');
-                    }
+                    await loadSessions();
+                    // Auto-open the new session
+                    window.open(data.session.url, '_blank');
                 } else {
                     alert('Error creating session');
-                    btn.disabled = false;
-                    btn.textContent = 'Start New Session';
                 }
             } catch (error) {
                 console.error('Error creating session:', error);
                 alert('Error creating session');
+            } finally {
                 btn.disabled = false;
-                btn.textContent = 'Start New Session';
+                btn.textContent = 'Create New Session';
             }
         }
         
-        async function destroySession() {
-            if (!confirm('Are you sure you want to end your session?')) {
+        async function deleteSession(sessionId) {
+            if (!confirm('Are you sure you want to delete this session?')) {
                 return;
             }
             
-            const btn = document.getElementById('destroy-session-btn');
-            btn.disabled = true;
-            btn.textContent = 'Ending...';
-            
             try {
-                const response = await fetch('/sessions/destroy', { method: 'DELETE' });
+                const response = await fetch(`/sessions/${sessionId}`, { method: 'DELETE' });
                 const data = await response.json();
                 
                 if (data.success) {
-                    sessionData = null;
-                    showSessionInactive();
+                    await loadSessions();
                 } else {
-                    alert('Error ending session');
+                    alert('Error deleting session');
                 }
             } catch (error) {
-                console.error('Error destroying session:', error);
-                alert('Error ending session');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'End Session';
+                console.error('Error deleting session:', error);
+                alert('Error deleting session');
             }
         }
         
-        function openSession() {
-            if (sessionData && sessionData.url) {
-                window.open(sessionData.url, '_blank');
-            }
+        function openSession(url) {
+            window.open(url, '_blank');
         }
         
         // Event listeners
         document.getElementById('create-session-btn').addEventListener('click', createSession);
-        document.getElementById('destroy-session-btn').addEventListener('click', destroySession);
-        document.getElementById('open-session-btn').addEventListener('click', openSession);
+        document.getElementById('refresh-btn').addEventListener('click', loadSessions);
         
-        // Check status on load
-        checkSessionStatus();
+        // Initial load
+        loadSessions();
         
         // Auto-refresh every 30 seconds
-        setInterval(checkSessionStatus, 30000);
+        setInterval(loadSessions, 30000);
     </script>
 </body>
 </html>

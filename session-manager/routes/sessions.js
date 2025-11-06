@@ -1,21 +1,50 @@
 const express = require('express');
 const router = express.Router();
 
-// Get user's session status
+// Get user's all sessions
+router.get('/', async (req, res) => {
+    try {
+        const sessionManager = req.app.locals.sessionManager;
+        const userId = req.session.user.id;
+        const userSessions = sessionManager.getUserSessions(userId);
+        
+        res.json({ sessions: userSessions });
+    } catch (error) {
+        console.error('Error getting user sessions:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get specific session status
+router.get('/:sessionId', async (req, res) => {
+    try {
+        const sessionManager = req.app.locals.sessionManager;
+        const userId = req.session.user.id;
+        const sessionId = req.params.sessionId;
+        const userSession = await sessionManager.getUserSession(userId, sessionId);
+        
+        if (userSession) {
+            res.json({ session: userSession });
+        } else {
+            res.status(404).json({ error: 'Session not found' });
+        }
+    } catch (error) {
+        console.error('Error getting session:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Get user's session status (legacy - returns all sessions)
 router.get('/status', async (req, res) => {
     try {
         const sessionManager = req.app.locals.sessionManager;
         const userId = req.session.user.id;
-        const userSession = await sessionManager.getUserSession(userId);
+        const userSessions = sessionManager.getUserSessions(userId);
         
-        if (userSession) {
-            res.json({
-                exists: true,
-                session: userSession
-            });
-        } else {
-            res.json({ exists: false });
-        }
+        res.json({ 
+            sessions: userSessions,
+            count: userSessions.length
+        });
     } catch (error) {
         console.error('Error getting session status:', error);
         res.status(500).json({ error: error.message });
@@ -29,24 +58,11 @@ router.post('/create', async (req, res) => {
         const userId = req.session.user.id;
         const username = req.session.user.username;
         
-        // Check if session already exists
-        let userSession = await sessionManager.getUserSession(userId);
-        
-        if (userSession) {
-            // Session exists, redirect to it
-            return res.json({
-                success: true,
-                exists: true,
-                url: userSession.url
-            });
-        }
-
         // Create new session
-        userSession = await sessionManager.createSession(userId, username);
+        const userSession = await sessionManager.createSession(userId, username);
         
         res.json({
             success: true,
-            exists: false,
             session: userSession
         });
     } catch (error) {
@@ -55,34 +71,36 @@ router.post('/create', async (req, res) => {
     }
 });
 
-// Get the session URL
-router.get('/url', async (req, res) => {
+// Delete a specific user's session
+router.delete('/:sessionId', async (req, res) => {
     try {
         const sessionManager = req.app.locals.sessionManager;
         const userId = req.session.user.id;
-        const userSession = await sessionManager.getUserSession(userId);
+        const sessionId = req.params.sessionId;
         
-        if (!userSession) {
-            return res.status(404).json({ error: 'No active session found' });
+        const result = await sessionManager.destroySession(userId, sessionId);
+        
+        if (result) {
+            res.json({ success: true, message: 'Session destroyed' });
+        } else {
+            res.status(404).json({ error: 'Session not found or access denied' });
         }
-
-        res.json({ url: userSession.url });
     } catch (error) {
-        console.error('Error getting session URL:', error);
+        console.error('Error destroying session:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Delete user's session
-router.delete('/destroy', async (req, res) => {
+// Delete all user's sessions
+router.delete('/', async (req, res) => {
     try {
         const sessionManager = req.app.locals.sessionManager;
         const userId = req.session.user.id;
-        await sessionManager.destroySession(userId);
+        const count = await sessionManager.destroyUserSessions(userId);
         
-        res.json({ success: true, message: 'Session destroyed' });
+        res.json({ success: true, message: `${count} session(s) destroyed` });
     } catch (error) {
-        console.error('Error destroying session:', error);
+        console.error('Error destroying sessions:', error);
         res.status(500).json({ error: error.message });
     }
 });

@@ -18,19 +18,26 @@ router.get('/sessions', async (req, res) => {
     }
 });
 
-// Kill a specific user's session
-router.delete('/sessions/:userId', async (req, res) => {
+// Kill a specific session by ID
+router.delete('/sessions/:sessionId', async (req, res) => {
     try {
         const sessionManager = req.app.locals.sessionManager;
-        const userId = req.params.userId;
-        await sessionManager.destroySession(userId);
+        const sessionId = req.params.sessionId;
+        
+        // Get session to find userId
+        const session = sessionManager.sessions.get(sessionId);
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+        
+        await sessionManager.destroySession(session.userId, sessionId);
         
         res.json({ 
             success: true, 
-            message: `Session for user ${userId} destroyed` 
+            message: `Session ${sessionId} for user ${session.username} destroyed` 
         });
     } catch (error) {
-        console.error('Error destroying user session:', error);
+        console.error('Error destroying session:', error);
         res.status(500).json({ error: error.message });
     }
 });
