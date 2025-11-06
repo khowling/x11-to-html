@@ -218,6 +218,46 @@ body {
     flex: 1;
 }
 
+.session-tech-info {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #dee2e6;
+    font-size: 0.75rem;
+}
+
+.session-tech-info details {
+    cursor: pointer;
+}
+
+.session-tech-info summary {
+    color: #6c757d;
+    font-size: 0.75rem;
+    user-select: none;
+    padding: 0.25rem 0;
+}
+
+.session-tech-info summary:hover {
+    color: #0078d4;
+}
+
+.tech-details {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: #ffffff;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+}
+
+.tech-details p {
+    margin: 0.25rem 0;
+    font-size: 0.7rem;
+    color: #495057;
+}
+
+.tech-details strong {
+    color: #212529;
+}
+
 .session-status, .session-controls {
     margin: 2rem 0;
 }

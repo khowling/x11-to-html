@@ -71,6 +71,20 @@
                         <button class="btn btn-success" onclick="openSession('${session.url}')">Open</button>
                         <button class="btn btn-danger" onclick="deleteSession('${session.sessionId}')">Delete</button>
                     </div>
+                    <div class="session-tech-info">
+                        <details>
+                            <summary>Technical Details</summary>
+                            <div class="tech-details">
+                                <p><strong>Session ID:</strong> ${session.sessionId}</p>
+                                <p><strong>Container ID:</strong> ${session.containerId.substring(0, 12)}</p>
+                                <p><strong>Container Name:</strong> ${session.containerName}</p>
+                                <p><strong>xterm PID:</strong> ${session.xtermPid || 'N/A'}</p>
+                                <p><strong>Display Number:</strong> :${session.displayNum}</p>
+                                <p><strong>Web Port:</strong> ${session.port}</p>
+                                <p><strong>X11 Port:</strong> ${session.x11Port || 'N/A'}</p>
+                            </div>
+                        </details>
+                    </div>
                 </div>
             `).join('');
             

@@ -182,6 +182,7 @@ class SessionManager {
             console.log(`Starting xterm process for display localhost:${displayNumber} (port ${x11Port})`);
             const xtermProcess = spawn('xterm', [
                 '-display', `localhost:${displayNumber}`,
+                '-maximized',  // Maximize the window
                 '-fa', 'Monospace',
                 '-fs', '12',
                 '-title', `${username}'s Session ${sessionId}`
@@ -202,7 +203,7 @@ class SessionManager {
                 displayNum,
                 x11Port,
                 xtermPid: xtermProcess.pid,
-                url: `http://${process.env.HOST || 'localhost'}:${port}/vnc.html`,
+                url: `http://${process.env.HOST || 'localhost'}:${port}/vnc.html?autoconnect=true&resize=scale`,
                 createdAt: new Date()
             };
 
