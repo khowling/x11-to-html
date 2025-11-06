@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>X11 Session Manager</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1>X11 Session Manager</h1>
+            <div class="nav-links">
+                <% if (user) { %>
+                    <span>Welcome, <%= user.name %></span>
+                    <a href="/auth/logout" class="btn btn-secondary">Logout</a>
+                <% } else { %>
+                    <a href="/auth/login" class="btn btn-primary">Login with EntraID</a>
+                <% } %>
+            </div>
+        </div>
+    </nav>
+    <main class="container">
+        <div class="hero">
+            <h2>Welcome to X11 Session Manager</h2>
+            <p>Access your X11 applications through your web browser</p>
+            <% if (!user) { %>
+                <a href="/auth/login" class="btn btn-primary btn-large">Get Started</a>
+            <% } else { %>
+                <a href="/dashboard" class="btn btn-primary btn-large">Go to Dashboard</a>
+            <% } %>
+        </div>
+        
+        <div class="features">
+            <div class="feature-card">
+                <h3>🔐 Secure Authentication</h3>
+                <p>Login with your corporate EntraID account</p>
+            </div>
+            <div class="feature-card">
+                <h3>🖥️ X11 Applications</h3>
+                <p>Run X11 applications in your browser</p>
+            </div>
+            <div class="feature-card">
+                <h3>🚀 Easy Access</h3>
+                <p>Access your session from anywhere</p>
+            </div>
+        </div>
+    </main>
+</body>
+</html>

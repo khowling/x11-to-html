@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - X11 Session Manager</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1>X11 Session Manager</h1>
+            <div class="nav-links">
+                <span>Welcome, <%= user.name %></span>
+                <% if (user.email && process.env.ADMIN_USERS && process.env.ADMIN_USERS.split(',').includes(user.email)) { %>
+                    <a href="/admin" class="btn btn-secondary">Admin</a>
+                <% } %>
+                <a href="/auth/logout" class="btn btn-secondary">Logout</a>
+            </div>
+        </div>
+    </nav>
+    
+    <main class="container">
+        <div class="dashboard">
+            <h2>Your X11 Session</h2>
+            
+            <div id="session-status" class="session-status">
+                <div class="loading">Checking session status...</div>
+            </div>
+            
+            <div id="session-controls" class="session-controls" style="display: none;">
+                <button id="create-session-btn" class="btn btn-primary btn-large">Start New Session</button>
+                <button id="open-session-btn" class="btn btn-success btn-large" style="display: none;">Open Session</button>
+                <button id="destroy-session-btn" class="btn btn-danger" style="display: none;">End Session</button>
+            </div>
+            
+            <div id="session-info" class="session-info" style="display: none;">
+                <h3>Session Details</h3>
+                <div id="session-details"></div>
+            </div>
+        </div>
+    </main>
+    
+    <script>
+        let sessionData = null;
+        
+        async function checkSessionStatus() {
+            try {
+                const response = await fetch('/sessions/status');
+                const data = await response.json();
+                
+                document.getElementById('session-status').style.display = 'none';
+                document.getElementById('session-controls').style.display = 'block';
+                
+                if (data.exists && data.session) {
+                    sessionData = data.session;
+                    showSessionActive();
+                } else {
+                    showSessionInactive();
+                }
+            } catch (error) {
+                console.error('Error checking session:', error);
+                document.getElementById('session-status').innerHTML = 
+                    '<div class="error">Error checking session status</div>';
+            }
+        }
+        
+        function showSessionActive() {
+            document.getElementById('create-session-btn').style.display = 'none';
+            document.getElementById('open-session-btn').style.display = 'inline-block';
+            document.getElementById('destroy-session-btn').style.display = 'inline-block';
+            document.getElementById('session-info').style.display = 'block';
+            
+            const details = document.getElementById('session-details');
+            details.innerHTML = `
+                <p><strong>Status:</strong> <span class="status-active">Active</span></p>
+                <p><strong>URL:</strong> <a href="${sessionData.url}" target="_blank">${sessionData.url}</a></p>
+                <p><strong>Port:</strong> ${sessionData.port}</p>
+                <p><strong>Created:</strong> ${new Date(sessionData.createdAt).toLocaleString()}</p>
+            `;
+        }
+        
+        function showSessionInactive() {
+            document.getElementById('create-session-btn').style.display = 'inline-block';
+            document.getElementById('open-session-btn').style.display = 'none';
+            document.getElementById('destroy-session-btn').style.display = 'none';
+            document.getElementById('session-info').style.display = 'none';
+        }
+        
+        async function createSession() {
+            const btn = document.getElementById('create-session-btn');
+            btn.disabled = true;
+            btn.textContent = 'Creating session...';
+            
+            try {
+                const response = await fetch('/sessions/create', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    if (data.exists) {
+                        // Session already exists
+                        window.open(data.url, '_blank');
+                        await checkSessionStatus();
+                    } else {
+                        // New session created
+                        sessionData = data.session;
+                        showSessionActive();
+                        // Auto-open the session
+                        window.open(sessionData.url, '_blank');
+                    }
+                } else {
+                    alert('Error creating session');
+                    btn.disabled = false;
+                    btn.textContent = 'Start New Session';
+                }
+            } catch (error) {
+                console.error('Error creating session:', error);
+                alert('Error creating session');
+                btn.disabled = false;
+                btn.textContent = 'Start New Session';
+            }
+        }
+        
+        async function destroySession() {
+            if (!confirm('Are you sure you want to end your session?')) {
+                return;
+            }
+            
+            const btn = document.getElementById('destroy-session-btn');
+            btn.disabled = true;
+            btn.textContent = 'Ending...';
+            
+            try {
+                const response = await fetch('/sessions/destroy', { method: 'DELETE' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    sessionData = null;
+                    showSessionInactive();
+                } else {
+                    alert('Error ending session');
+                }
+            } catch (error) {
+                console.error('Error destroying session:', error);
+                alert('Error ending session');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'End Session';
+            }
+        }
+        
+        function openSession() {
+            if (sessionData && sessionData.url) {
+                window.open(sessionData.url, '_blank');
+            }
+        }
+        
+        // Event listeners
+        document.getElementById('create-session-btn').addEventListener('click', createSession);
+        document.getElementById('destroy-session-btn').addEventListener('click', destroySession);
+        document.getElementById('open-session-btn').addEventListener('click', openSession);
+        
+        // Check status on load
+        checkSessionStatus();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(checkSessionStatus, 30000);
+    </script>
+</body>
+</html>

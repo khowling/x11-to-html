@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - X11 Session Manager</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <h1>X11 Session Manager - Admin</h1>
+            <div class="nav-links">
+                <a href="/dashboard" class="btn btn-secondary">Dashboard</a>
+                <span>Admin: <%= user.name %></span>
+                <a href="/auth/logout" class="btn btn-secondary">Logout</a>
+            </div>
+        </div>
+    </nav>
+    
+    <main class="container">
+        <div class="admin-panel">
+            <h2>System Administration</h2>
+            
+            <div class="stats-grid" id="stats-grid">
+                <div class="stat-card">
+                    <h3>Active Sessions</h3>
+                    <div class="stat-value" id="stat-sessions">-</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Running Containers</h3>
+                    <div class="stat-value" id="stat-containers">-</div>
+                </div>
+            </div>
+            
+            <div class="sessions-table">
+                <h3>Active User Sessions</h3>
+                <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
+                
+                <div id="sessions-list">
+                    <div class="loading">Loading sessions...</div>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <script>
+        async function loadStats() {
+            try {
+                const response = await fetch('/admin/stats');
+                const data = await response.json();
+                
+                document.getElementById('stat-sessions').textContent = data.activeSessions || 0;
+                document.getElementById('stat-containers').textContent = data.runningContainers || 0;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+        
+        async function loadSessions() {
+            try {
+                const response = await fetch('/admin/sessions');
+                const data = await response.json();
+                
+                const sessionsList = document.getElementById('sessions-list');
+                
+                if (data.sessions.length === 0) {
+                    sessionsList.innerHTML = '<p class="no-data">No active sessions</p>';
+                    return;
+                }
+                
+                const tableHTML = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Username</th>
+                                <th>Port</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.sessions.map(session => `
+                                <tr>
+                                    <td>${session.userId}</td>
+                                    <td>${session.username}</td>
+                                    <td>${session.port}</td>
+                                    <td><span class="status-${session.status || 'running'}">${session.status || 'running'}</span></td>
+                                    <td>${new Date(session.createdAt).toLocaleString()}</td>
+                                    <td>
+                                        <button class="btn btn-small btn-danger" onclick="killSession('${session.userId}', '${session.username}')">
+                                            Kill
+                                        </button>
+                                        <a href="${session.url}" target="_blank" class="btn btn-small btn-secondary">View</a>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+                
+                sessionsList.innerHTML = tableHTML;
+            } catch (error) {
+                console.error('Error loading sessions:', error);
+                document.getElementById('sessions-list').innerHTML = 
+                    '<div class="error">Error loading sessions</div>';
+            }
+        }
+        
+        async function killSession(userId, username) {
+            if (!confirm(`Are you sure you want to kill the session for ${username}?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/admin/sessions/${encodeURIComponent(userId)}`, {
+                    method: 'DELETE'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`Session for ${username} has been terminated`);
+                    await refresh();
+                } else {
+                    alert('Error killing session');
+                }
+            } catch (error) {
+                console.error('Error killing session:', error);
+                alert('Error killing session');
+            }
+        }
+        
+        async function refresh() {
+            await Promise.all([loadStats(), loadSessions()]);
+        }
+        
+        // Event listeners
+        document.getElementById('refresh-btn').addEventListener('click', refresh);
+        
+        // Initial load
+        refresh();
+        
+        // Auto-refresh every 10 seconds
+        setInterval(refresh, 10000);
+    </script>
+</body>
+</html>
