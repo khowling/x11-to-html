@@ -34,6 +34,23 @@
             </div>
         </div>
     </main>
+
+    <!-- Progress Modal -->
+    <div id="progress-overlay" class="progress-overlay">
+        <div class="progress-modal">
+            <h3>Creating Session</h3>
+            <div class="spinner"></div>
+            <div id="progress-text" class="progress-text">Initializing...</div>
+            <div class="progress-steps">
+                <div class="progress-step" data-step="init">Initializing session</div>
+                <div class="progress-step" data-step="container">Creating Docker container</div>
+                <div class="progress-step" data-step="starting">Starting container</div>
+                <div class="progress-step" data-step="vnc">Waiting for VNC server</div>
+                <div class="progress-step" data-step="xterm">Starting xterm process</div>
+                <div class="progress-step" data-step="complete">Session ready</div>
+            </div>
+        </div>
+    </div>
     
     <script>
         let sessions = [];
@@ -93,26 +110,87 @@
         
         async function createSession() {
             const btn = document.getElementById('create-session-btn');
+            const overlay = document.getElementById('progress-overlay');
+            const progressText = document.getElementById('progress-text');
+            
             btn.disabled = true;
-            btn.textContent = 'Creating session...';
+            overlay.classList.add('active');
+            
+            // Reset progress steps
+            document.querySelectorAll('.progress-step').forEach(step => {
+                step.classList.remove('active', 'completed');
+            });
             
             try {
-                const response = await fetch('/sessions/create', { method: 'POST' });
-                const data = await response.json();
+                // Use EventSource for real-time progress updates
+                const eventSource = new EventSource('/sessions/create');
+                let sessionData = null;
                 
-                if (data.success) {
-                    await loadSessions();
-                    // Auto-open the new session
-                    window.open(data.session.url, '_blank');
-                } else {
-                    alert('Error creating session');
-                }
+                eventSource.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.step) {
+                        // Update progress text
+                        progressText.textContent = data.message;
+                        
+                        // Update step indicators
+                        const currentStep = document.querySelector(`[data-step="${data.step}"]`);
+                        if (currentStep) {
+                            // Mark previous steps as completed
+                            let prevStep = currentStep.previousElementSibling;
+                            while (prevStep) {
+                                prevStep.classList.remove('active');
+                                prevStep.classList.add('completed');
+                                prevStep = prevStep.previousElementSibling;
+                            }
+                            // Mark current step as active
+                            currentStep.classList.add('active');
+                            currentStep.classList.remove('completed');
+                        }
+                    }
+                    
+                    if (data.complete) {
+                        sessionData = data.session;
+                        // Mark all steps as completed
+                        document.querySelectorAll('.progress-step').forEach(step => {
+                            step.classList.remove('active');
+                            step.classList.add('completed');
+                        });
+                        eventSource.close();
+                        
+                        // Wait a moment to show completion
+                        setTimeout(() => {
+                            overlay.classList.remove('active');
+                            loadSessions();
+                            // Auto-open the new session
+                            if (sessionData && sessionData.url) {
+                                window.open(sessionData.url, '_blank');
+                            }
+                            btn.disabled = false;
+                        }, 1000);
+                    }
+                    
+                    if (data.error) {
+                        eventSource.close();
+                        overlay.classList.remove('active');
+                        alert('Error creating session: ' + data.error);
+                        btn.disabled = false;
+                    }
+                };
+                
+                eventSource.onerror = (error) => {
+                    console.error('EventSource error:', error);
+                    eventSource.close();
+                    overlay.classList.remove('active');
+                    alert('Error creating session. Please try again.');
+                    btn.disabled = false;
+                };
+                
             } catch (error) {
                 console.error('Error creating session:', error);
+                overlay.classList.remove('active');
                 alert('Error creating session');
-            } finally {
                 btn.disabled = false;
-                btn.textContent = 'Create New Session';
             }
         }
         

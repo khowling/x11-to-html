@@ -70,6 +70,12 @@ const server = app.listen(PORT, () => {
 async function gracefulShutdown(signal) {
     console.log(`\n${signal} received. Cleaning up...`);
     
+    // Set a timeout to force exit if cleanup takes too long
+    const forceExitTimeout = setTimeout(() => {
+        console.error('Cleanup timeout exceeded. Force exiting...');
+        process.exit(1);
+    }, 30000); // 30 seconds timeout
+    
     try {
         // Stop accepting new connections
         server.close(() => {
@@ -81,10 +87,15 @@ async function gracefulShutdown(signal) {
         await sessionManager.destroyAllSessions();
         console.log('All sessions destroyed');
         
+        // Clear the force exit timeout
+        clearTimeout(forceExitTimeout);
+        
         // Exit process
+        console.log('Cleanup complete. Exiting gracefully.');
         process.exit(0);
     } catch (error) {
         console.error('Error during cleanup:', error);
+        clearTimeout(forceExitTimeout);
         process.exit(1);
     }
 }

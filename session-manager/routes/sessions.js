@@ -15,22 +15,44 @@ router.get('/', async (req, res) => {
     }
 });
 
-// Get specific session status
-router.get('/:sessionId', async (req, res) => {
+// Create a new session for the user (with Server-Sent Events for progress)
+// NOTE: This MUST come before /:sessionId route to avoid matching "create" as a sessionId
+router.get('/create', async (req, res) => {
+    // Set up Server-Sent Events
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const sendProgress = (step, message) => {
+        res.write(`data: ${JSON.stringify({ step, message })}\n\n`);
+    };
+
+    const sendComplete = (session) => {
+        res.write(`data: ${JSON.stringify({ complete: true, session })}\n\n`);
+        res.end();
+    };
+
+    const sendError = (error) => {
+        res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+        res.end();
+    };
+
     try {
         const sessionManager = req.app.locals.sessionManager;
         const userId = req.session.user.id;
-        const sessionId = req.params.sessionId;
-        const userSession = await sessionManager.getUserSession(userId, sessionId);
+        const username = req.session.user.username;
         
-        if (userSession) {
-            res.json({ session: userSession });
-        } else {
-            res.status(404).json({ error: 'Session not found' });
-        }
+        // Create new session with progress updates
+        sendProgress('init', 'Initializing session...');
+        
+        const userSession = await sessionManager.createSessionWithProgress(userId, username, sendProgress);
+        
+        sendProgress('complete', 'Session created successfully!');
+        sendComplete(userSession);
     } catch (error) {
-        console.error('Error getting session:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error creating session:', error);
+        sendError(error);
     }
 });
 
@@ -51,22 +73,21 @@ router.get('/status', async (req, res) => {
     }
 });
 
-// Create a new session for the user
-router.post('/create', async (req, res) => {
+// Get specific session status
+router.get('/:sessionId', async (req, res) => {
     try {
         const sessionManager = req.app.locals.sessionManager;
         const userId = req.session.user.id;
-        const username = req.session.user.username;
+        const sessionId = req.params.sessionId;
+        const userSession = await sessionManager.getUserSession(userId, sessionId);
         
-        // Create new session
-        const userSession = await sessionManager.createSession(userId, username);
-        
-        res.json({
-            success: true,
-            session: userSession
-        });
+        if (userSession) {
+            res.json({ session: userSession });
+        } else {
+            res.status(404).json({ error: 'Session not found' });
+        }
     } catch (error) {
-        console.error('Error creating session:', error);
+        console.error('Error getting session:', error);
         res.status(500).json({ error: error.message });
     }
 });
