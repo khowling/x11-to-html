@@ -110,75 +110,60 @@ router.ws = function(app) {
     const cookie = require('cookie');
     const signature = require('cookie-signature');
     
-    // Get session secret from environment
     const sessionSecret = process.env.SESSION_SECRET || 'your-secret-key';
     
     server.on('upgrade', (req, socket, head) => {
-        console.log(`[UPGRADE] Request received: ${req.url}`);
-        console.log(`[UPGRADE] Headers:`, JSON.stringify(req.headers, null, 2));
-        
         // Check if this is a proxy WebSocket request
         const urlMatch = req.url.match(/^\/proxy\/([^\/\?]+)/);
         if (!urlMatch) {
-            console.log(`[UPGRADE] Not a proxy request, ignoring`);
             return; // Not a proxy request, ignore
         }
         
         const sessionId = urlMatch[1];
-        console.log(`WebSocket upgrade request for session: ${sessionId}, URL: ${req.url}`);
+        console.log(`[${sessionId}] WebSocket upgrade: ${req.url}`);
         
-        // Parse cookies from the request
+        // Parse and validate session cookie
         const cookies = cookie.parse(req.headers.cookie || '');
-        console.log(`  Cookies present: ${Object.keys(cookies).join(', ')}`);
-        
-        // Get the session ID from cookie (connect.sid by default)
         let sessionCookie = cookies['connect.sid'];
+        
         if (!sessionCookie) {
-            console.error(`WebSocket upgrade denied: No session cookie found`);
+            console.error(`[${sessionId}] WebSocket denied: No session cookie`);
             socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
             socket.destroy();
             return;
         }
         
-        // Decode the signed cookie
+        // Verify signed cookie
         if (sessionCookie.startsWith('s:')) {
             sessionCookie = signature.unsign(sessionCookie.slice(2), sessionSecret);
             if (sessionCookie === false) {
-                console.error(`WebSocket upgrade denied: Invalid session signature`);
+                console.error(`[${sessionId}] WebSocket denied: Invalid signature`);
                 socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
                 socket.destroy();
                 return;
             }
         }
         
-        console.log(`  Session cookie ID: ${sessionCookie}`);
-        
-        // Get session from store (in-memory for now)
-        // Note: We need to access the session store, but it's not directly available
-        // For now, we'll validate that a session exists and proceed
-        // TODO: Implement proper session store lookup
-        
+        // Verify session exists
         const sessionManager = app.locals.sessionManager;
         const session = sessionManager.sessions.get(sessionId);
         
         if (!session) {
-            console.error(`WebSocket upgrade denied: Session ${sessionId} not found`);
+            console.error(`[${sessionId}] WebSocket denied: Session not found`);
             socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
             socket.destroy();
             return;
         }
         
-        // Rewrite the URL to remove the /proxy/:sessionId prefix
+        // Rewrite URL path for container
         const proxyPrefix = `/proxy/${sessionId}`;
         const targetPath = req.url.startsWith(proxyPrefix) 
             ? req.url.substring(proxyPrefix.length) || '/'
             : req.url;
         
-        console.log(`WebSocket upgrade approved for session ${sessionId}`);
-        console.log(`  Path: ${req.url} -> ${targetPath}`);
-        console.log(`  Target: ws://localhost:${session.port}${targetPath}`);
+        console.log(`[${sessionId}] Proxying to ws://localhost:${session.port}${targetPath}`);
         
-        // Create proxy request to the container
+        // Create WebSocket upgrade request to container
         const proxyReq = http.request({
             hostname: 'localhost',
             port: session.port,
@@ -194,9 +179,9 @@ router.ws = function(app) {
         });
         
         proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
-            console.log(`[${sessionId}] WebSocket connection established`);
+            console.log(`[${sessionId}] WebSocket connected`);
             
-            // Forward the upgrade response to the client
+            // Forward upgrade response to client
             socket.write(`HTTP/1.1 ${proxyRes.statusCode} ${proxyRes.statusMessage}\r\n`);
             Object.keys(proxyRes.headers).forEach(key => {
                 socket.write(`${key}: ${proxyRes.headers[key]}\r\n`);
@@ -204,39 +189,40 @@ router.ws = function(app) {
             socket.write('\r\n');
             socket.write(proxyHead);
             
-            // Pipe data between client and container
+            // Bidirectional pipe between client and container
             proxySocket.pipe(socket);
             socket.pipe(proxySocket);
             
-            // Handle errors and cleanup
+            // Cleanup handlers
+            const cleanup = () => {
+                socket.destroy();
+                proxySocket.destroy();
+            };
+            
             proxySocket.on('error', (err) => {
                 console.error(`[${sessionId}] Proxy socket error:`, err.message);
-                socket.destroy();
+                cleanup();
             });
             
             socket.on('error', (err) => {
                 console.error(`[${sessionId}] Client socket error:`, err.message);
-                proxySocket.destroy();
+                cleanup();
             });
             
             proxySocket.on('close', () => {
-                console.log(`[${sessionId}] WebSocket connection closed (proxy side)`);
-                socket.destroy();
+                console.log(`[${sessionId}] WebSocket closed`);
+                cleanup();
             });
             
-            socket.on('close', () => {
-                console.log(`[${sessionId}] WebSocket connection closed (client side)`);
-                proxySocket.destroy();
-            });
+            socket.on('close', () => cleanup());
         });
         
         proxyReq.on('error', (err) => {
-            console.error(`[${sessionId}] WebSocket proxy request error:`, err.message);
+            console.error(`[${sessionId}] WebSocket proxy error:`, err.message);
             socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
             socket.destroy();
         });
         
-        // Send the upgrade request
         proxyReq.end();
     });
     

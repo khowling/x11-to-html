@@ -49,32 +49,17 @@ router.get('/create', async (req, res) => {
         
         const userSession = await sessionManager.createSessionWithProgress(userId, username, sendProgress);
         
-        // Update session with proxied URL (no token needed - uses session cookie)
-        // Add path parameter to tell noVNC where the WebSocket endpoint is
-        userSession.proxyUrl = `http://${process.env.HOST || 'localhost'}:${process.env.PORT || 3000}/proxy/${userSession.sessionId}/vnc.html?autoconnect=true&resize=scale&path=proxy/${userSession.sessionId}/websockify`;
+        // Build proxied URL with WebSocket path parameter
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const sessionPath = `/proxy/${userSession.sessionId}`;
+        // noVNC path parameter should be relative (without leading /)
+        userSession.proxyUrl = `${baseUrl}${sessionPath}/vnc.html?autoconnect=true&resize=scale&path=proxy/${userSession.sessionId}/websockify`;
         
         sendProgress('complete', 'Session created successfully!');
         sendComplete(userSession);
     } catch (error) {
         console.error('Error creating session:', error);
         sendError(error);
-    }
-});
-
-// Get user's session status (legacy - returns all sessions)
-router.get('/status', async (req, res) => {
-    try {
-        const sessionManager = req.app.locals.sessionManager;
-        const userId = req.session.user.id;
-        const userSessions = sessionManager.getUserSessions(userId);
-        
-        res.json({ 
-            sessions: userSessions,
-            count: userSessions.length
-        });
-    } catch (error) {
-        console.error('Error getting session status:', error);
-        res.status(500).json({ error: error.message });
     }
 });
 

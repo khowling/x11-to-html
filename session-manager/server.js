@@ -56,7 +56,7 @@ app.locals.sessionManager = sessionManager;
 app.use('/auth', authRoutes);
 app.use('/sessions', isAuthenticated, sessionRoutes);
 app.use('/admin', isAuthenticated, isAdmin, adminRoutes);
-app.use('/proxy', proxyRoutes); // Proxy route authenticates via bearer token, not session
+app.use('/proxy', proxyRoutes); // Proxy route authenticates via session cookie
 
 // Error handling
 app.use((err, req, res, next) => {
