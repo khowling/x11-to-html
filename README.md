@@ -5,42 +5,42 @@ A secure web-based solution for accessing X11 applications through a browser usi
 ## Architecture
 
 ```mermaid
-graph TB
+graph LR
     subgraph "Session Manager"
+        direction TB
         AUTH["/auth - EntraID Auth"]
         SM["/sessions - Session CRUD"]
         PROXY["/proxy - Authenticated Proxy"]
     end
     
-    subgraph "Container 1"
-        D1["Docker Container<br/>Xvfb :0 + noVNC<br/>Port 6080→6080, 6001→6001"]
-    end
-    
-    subgraph "Container 2"
-        D2["Docker Container<br/>Xvfb :0 + noVNC<br/>Port 6081→6080, 6002→6001"]
-    end
-    
-    subgraph "Host Processes"
-        XT1[xterm Process 1]
-        XT2[xterm Process 2]
-    end
-    
-    SM -->|Docker API| D1
-    SM -->|Docker API| D2
-    D1 --> XT1
-    D2 --> XT2
-    
-    SM -->|Fork DISPLAY=localhost:1| XT1
-    SM -->|Fork DISPLAY=localhost:2| XT2
-    
-    XT1 -.->|X11 to :6001| D1
-    XT2 -.->|X11 to :6002| D2
-    
     PROXY -->|:6080| D1
     PROXY -->|:6081| D2
     
-    linkStyle 2 stroke-width:0
-    linkStyle 3 stroke-width:0
+    SM -->|Fork Process| XT1
+    SM -->|Fork Process| XT2
+    
+    subgraph CC["Container Cluster"]
+        direction TB
+        subgraph C1["Container 1"]
+            D1["Docker Container<br/>Xvfb :0 + noVNC<br/>Port 6080→6080, 6001→6001"]
+        end
+        
+        subgraph C2["Container 2"]
+            D2["Docker Container<br/>Xvfb :0 + noVNC<br/>Port 6081→6080, 6002→6001"]
+        end
+    end
+    
+    SM -->|Deploy Container| D1
+    SM -->|Deploy Container| D2
+    
+    D1 -.->|X11 Port :6001| XT1
+    D2 -.->|X11 Port :6002| XT2
+    
+    subgraph HP["Host Processes"]
+        direction TB
+        XT1["xterm Process 1<br/>DISPLAY=container:1"]
+        XT2["xterm Process 2<br/>DISPLAY=container:2"]
+    end
     
     style AUTH fill:#e1f5ff
     style PROXY fill:#ffe1e1
