@@ -42,11 +42,20 @@ router.get('/create', async (req, res) => {
         const sessionManager = req.app.locals.sessionManager;
         const userId = req.session.user.id;
         const username = req.session.user.username;
+        const displaySize = {
+            width: req.query.width,
+            height: req.query.height
+        };
         
         // Create new session with progress updates
         sendProgress('init', 'Initializing session...');
         
-        const userSession = await sessionManager.createSessionWithProgress(userId, username, sendProgress);
+        const userSession = await sessionManager.createSessionWithProgress(
+            userId,
+            username,
+            displaySize,
+            sendProgress
+        );
         
         sendProgress('complete', 'Session created successfully!');
         sendComplete(userSession);

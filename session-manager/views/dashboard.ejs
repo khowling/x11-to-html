@@ -100,6 +100,7 @@
                                 <p><strong>Container Name:</strong> ${session.containerName}</p>
                                 <p><strong>xterm PID:</strong> ${session.xtermPid || 'N/A'}</p>
                                 <p><strong>Display Number:</strong> :${session.displayNum}</p>
+                                <p><strong>Resolution:</strong> ${session.width}x${session.height}</p>
                                 <p><strong>SSH Port:</strong> ${session.sshPort || 'N/A'}</p>
                                 <p><strong>X11 Port:</strong> ${session.x11Port || 'N/A'}</p>
                             </div>
@@ -116,6 +117,15 @@
             const btn = document.getElementById('create-session-btn');
             const overlay = document.getElementById('progress-overlay');
             const progressText = document.getElementById('progress-text');
+            const sessionWindow = window.open('about:blank', '_blank');
+            const displayWindow = sessionWindow || window;
+            const width = displayWindow.innerWidth;
+            const height = displayWindow.innerHeight;
+
+            if (sessionWindow) {
+                sessionWindow.document.title = 'Creating X11 session';
+                sessionWindow.document.body.textContent = 'Creating session...';
+            }
             
             btn.disabled = true;
             overlay.classList.add('active');
@@ -127,7 +137,8 @@
             
             try {
                 // Use EventSource for real-time progress updates
-                const eventSource = new EventSource('/sessions/create');
+                const params = new URLSearchParams({ width, height });
+                const eventSource = new EventSource(`/sessions/create?${params}`);
                 let sessionData = null;
                 
                 eventSource.onmessage = (event) => {
@@ -167,7 +178,11 @@
                             overlay.classList.remove('active');
                             loadSessions();
                             if (sessionData.url) {
-                                window.open(sessionData.url, '_blank');
+                                if (sessionWindow) {
+                                    sessionWindow.location.replace(sessionData.url);
+                                } else {
+                                    window.open(sessionData.url, '_blank');
+                                }
                             }
                             btn.disabled = false;
                         }, 1000);
@@ -176,6 +191,9 @@
                     if (data.error) {
                         eventSource.close();
                         overlay.classList.remove('active');
+                        if (sessionWindow) {
+                            sessionWindow.close();
+                        }
                         alert('Error creating session: ' + data.error);
                         btn.disabled = false;
                     }
@@ -185,6 +203,9 @@
                     console.error('EventSource error:', error);
                     eventSource.close();
                     overlay.classList.remove('active');
+                    if (sessionWindow) {
+                        sessionWindow.close();
+                    }
                     alert('Error creating session. Please try again.');
                     btn.disabled = false;
                 };
@@ -192,6 +213,9 @@
             } catch (error) {
                 console.error('Error creating session:', error);
                 overlay.classList.remove('active');
+                if (sessionWindow) {
+                    sessionWindow.close();
+                }
                 alert('Error creating session');
                 btn.disabled = false;
             }

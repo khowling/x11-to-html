@@ -55,6 +55,13 @@ class SessionManager {
         };
     }
 
+    normalizeDisplaySize(displaySize = {}) {
+        const width = Math.min(Math.max(parseInt(displaySize.width, 10) || 1024, 640), 3840);
+        const height = Math.min(Math.max(parseInt(displaySize.height, 10) || 768, 480), 2160);
+
+        return { width, height };
+    }
+
     async ensureDockerNetwork() {
         try {
             const network = await docker.getNetwork(this.networkName).inspect();
@@ -259,6 +266,8 @@ class SessionManager {
             containerId: session.containerId,
             containerName: session.containerName,
             displayNum: session.displayNum,
+            width: session.width,
+            height: session.height,
             x11Port: session.x11Port,
             sshPort: session.sshPort,
             xtermPid: session.xtermPid,
@@ -290,10 +299,11 @@ class SessionManager {
     /**
      * Create a new session for a user
      */
-    async createSession(userId, username) {
+    async createSession(userId, username, displaySize) {
         const sessionId = this.generateSessionId();
         console.log(`Creating session ${sessionId} for user: ${username} (${userId})`);
 
+        const { width, height } = this.normalizeDisplaySize(displaySize);
         const { sshPort, x11Port } = this.reserveNextAvailablePorts();
         const displayNum = x11Port - 6000;
         const containerName = `x11-bridge-${sessionId}`;
@@ -333,6 +343,7 @@ class SessionManager {
                 name: containerName,
                 Env: [
                     `DISPLAY=:1`,
+                    `VNC_RESOLUTION=${width}x${height}`,
                     `VNC_PORT=5901`,
                     `VNC_PASSWORD=${vncPassword}`,
                     `SSH_AUTHORIZED_KEY=${sshCredentials.publicKey}`,
@@ -397,6 +408,8 @@ class SessionManager {
                 containerId: container.id,
                 containerName,
                 displayNum,
+                width,
+                height,
                 x11Port,
                 sshPort,
                 hostNetworkName,
@@ -466,10 +479,11 @@ class SessionManager {
     /**
      * Create a new session for a user with progress callbacks
      */
-    async createSessionWithProgress(userId, username, progressCallback) {
+    async createSessionWithProgress(userId, username, displaySize, progressCallback) {
         const sessionId = this.generateSessionId();
         console.log(`Creating session ${sessionId} for user: ${username} (${userId})`);
 
+        const { width, height } = this.normalizeDisplaySize(displaySize);
         const { sshPort, x11Port } = this.reserveNextAvailablePorts();
         const displayNum = x11Port - 6000;
         const containerName = `x11-bridge-${sessionId}`;
@@ -510,6 +524,7 @@ class SessionManager {
                 name: containerName,
                 Env: [
                     `DISPLAY=:1`,
+                    `VNC_RESOLUTION=${width}x${height}`,
                     `VNC_PORT=5901`,
                     `VNC_PASSWORD=${vncPassword}`,
                     `SSH_AUTHORIZED_KEY=${sshCredentials.publicKey}`,
@@ -578,6 +593,8 @@ class SessionManager {
                 containerId: container.id,
                 containerName,
                 displayNum,
+                width,
+                height,
                 x11Port,
                 sshPort,
                 hostNetworkName,

@@ -14,6 +14,23 @@ test('reserves unique ports for sessions being created concurrently', () => {
     assert.deepEqual(second, { sshPort: 22001, x11Port: 6002 });
 });
 
+test('normalizes requested browser dimensions to safe display limits', () => {
+    const manager = new SessionManager();
+
+    assert.deepEqual(manager.normalizeDisplaySize({ width: '1280', height: '720' }), {
+        width: 1280,
+        height: 720
+    });
+    assert.deepEqual(manager.normalizeDisplaySize({ width: '10', height: '99999' }), {
+        width: 640,
+        height: 2160
+    });
+    assert.deepEqual(manager.normalizeDisplaySize({}), {
+        width: 1024,
+        height: 768
+    });
+});
+
 test('client session excludes credentials and internal network details', () => {
     const manager = new SessionManager();
     const clientSession = manager.toClientSession({
@@ -23,6 +40,8 @@ test('client session excludes credentials and internal network details', () => {
         containerId: 'container-123',
         containerName: 'x11-bridge-session-123',
         displayNum: 1,
+        width: 1280,
+        height: 720,
         x11Port: 6001,
         sshPort: 22000,
         xtermPid: 1234,
