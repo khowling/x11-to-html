@@ -3,6 +3,8 @@ const { execFileSync, spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
+const GuacamoleAuth = require('./guacamoleAuth');
 
 const docker = new Docker();
 
@@ -13,8 +15,12 @@ class SessionManager {
         // userSessions: Map<userId, Set<sessionId>>
         this.sessions = new Map();
         this.userSessions = new Map();
-        this.basePort = parseInt(process.env.X11_BRIDGE_BASE_PORT) || 6080;
+        this.pendingSshPorts = new Set();
+        this.sshBasePort = parseInt(process.env.X11_BRIDGE_SSH_BASE_PORT, 10) || 22000;
+        this.x11BasePort = parseInt(process.env.X11_BRIDGE_X11_BASE_PORT, 10) || 6001;
         this.bridgeImage = process.env.X11_BRIDGE_IMAGE || 'x11-web-bridge';
+        this.networkName = process.env.X11_DOCKER_NETWORK || 'x11-guacamole';
+        this.guacamoleAuth = new GuacamoleAuth();
     }
 
     /**
@@ -25,19 +31,93 @@ class SessionManager {
     }
 
     /**
-     * Get the next available port
+     * Get the next available pair of SSH and X11 ports
      */
-    async getNextAvailablePort() {
-        let port = this.basePort;
-        const usedPorts = new Set(
-            Array.from(this.sessions.values()).map(s => s.port)
+    reserveNextAvailablePorts() {
+        let offset = 0;
+        const usedSshPorts = new Set(
+            [
+                ...Array.from(this.sessions.values()).map(session => session.sshPort),
+                ...this.pendingSshPorts
+            ]
         );
 
-        while (usedPorts.has(port)) {
-            port++;
+        while (usedSshPorts.has(this.sshBasePort + offset)) {
+            offset++;
         }
 
-        return port;
+        const sshPort = this.sshBasePort + offset;
+        this.pendingSshPorts.add(sshPort);
+
+        return {
+            sshPort,
+            x11Port: this.x11BasePort + offset
+        };
+    }
+
+    async ensureDockerNetwork() {
+        try {
+            const network = await docker.getNetwork(this.networkName).inspect();
+            if (!network.Internal) {
+                throw new Error(`Docker network ${this.networkName} must be internal`);
+            }
+        } catch (error) {
+            if (error.statusCode !== 404) {
+                throw error;
+            }
+
+            try {
+                await docker.createNetwork({
+                    Name: this.networkName,
+                    Internal: true,
+                    CheckDuplicate: true,
+                    Labels: {
+                        'x11-session-manager': 'true'
+                    }
+                });
+            } catch (createError) {
+                if (createError.statusCode !== 409) {
+                    throw createError;
+                }
+            }
+        }
+    }
+
+    async createSessionHostNetwork(sessionId) {
+        const networkName = `x11-host-${sessionId}`;
+        await docker.createNetwork({
+            Name: networkName,
+            Internal: false,
+            CheckDuplicate: true,
+            Labels: {
+                'x11-session-manager': 'true',
+                'x11-session-network': 'true',
+                'session-id': sessionId
+            }
+        });
+        return networkName;
+    }
+
+    async removeSessionHostNetwork(networkName) {
+        if (!networkName) {
+            return;
+        }
+
+        for (let attempt = 1; attempt <= 5; attempt++) {
+            try {
+                await docker.getNetwork(networkName).remove();
+                return;
+            } catch (error) {
+                if (error.statusCode === 404) {
+                    return;
+                }
+                if (attempt === 5) {
+                    console.error(`Error removing network ${networkName}:`, error.message);
+                    return;
+                }
+                await new Promise(resolve => setTimeout(resolve, 250 * attempt));
+            }
+        }
     }
 
     createSshCredentials() {
@@ -135,7 +215,7 @@ class SessionManager {
         for (const sessionId of sessionIds) {
             const session = this.sessions.get(sessionId);
             if (session) {
-                userSessions.push(session);
+                userSessions.push(this.toClientSession(session));
             }
         }
         
@@ -158,23 +238,39 @@ class SessionManager {
             const info = await container.inspect();
             
             if (info.State.Running) {
-                return session;
+                return this.toClientSession(session);
             } else {
                 // Container stopped, clean up
-                this.removeSession(sessionId);
+                await this.removeSession(sessionId);
                 return null;
             }
         } catch (error) {
             // Container doesn't exist, clean up
-            this.removeSession(sessionId);
+            await this.removeSession(sessionId);
             return null;
         }
+    }
+
+    toClientSession(session) {
+        return {
+            sessionId: session.sessionId,
+            userId: session.userId,
+            username: session.username,
+            containerId: session.containerId,
+            containerName: session.containerName,
+            displayNum: session.displayNum,
+            x11Port: session.x11Port,
+            sshPort: session.sshPort,
+            xtermPid: session.xtermPid,
+            createdAt: session.createdAt,
+            url: this.guacamoleAuth.createSessionUrl(session)
+        };
     }
 
     /**
      * Remove a session from tracking
      */
-    removeSession(sessionId) {
+    async removeSession(sessionId) {
         const session = this.sessions.get(sessionId);
         if (session) {
             this.terminateProcess(session.sshTunnelPid, 'SSH tunnel');
@@ -187,6 +283,7 @@ class SessionManager {
                 }
             }
             this.sessions.delete(sessionId);
+            await this.removeSessionHostNetwork(session.hostNetworkName);
         }
     }
 
@@ -197,15 +294,19 @@ class SessionManager {
         const sessionId = this.generateSessionId();
         console.log(`Creating session ${sessionId} for user: ${username} (${userId})`);
 
-        // Get available port
-        const port = await this.getNextAvailablePort();
-        const displayNum = port - this.basePort;
-        const sshPort = 22000 + displayNum;
+        const { sshPort, x11Port } = this.reserveNextAvailablePorts();
+        const displayNum = x11Port - 6000;
         const containerName = `x11-bridge-${sessionId}`;
-        const sshCredentials = this.createSshCredentials();
+        const vncPassword = crypto.randomBytes(4).toString('hex');
+        let sshCredentials;
+        let hostNetworkName;
         let sshProcess;
 
         try {
+            sshCredentials = this.createSshCredentials();
+            await this.ensureDockerNetwork();
+            hostNetworkName = await this.createSessionHostNetwork(sessionId);
+
             // Check if a container with this name already exists and remove it
             try {
                 const existingContainer = docker.getContainer(containerName);
@@ -225,10 +326,7 @@ class SessionManager {
             }
 
             // Launch x11-web-bridge container
-            console.log(`Starting container ${containerName} on port ${port}`);
-            
-            // Each SSH tunnel gets a unique loopback port and forwards to display :1.
-            const x11Port = 6001 + displayNum;
+            console.log(`Starting container ${containerName} on network ${this.networkName}`);
             
             const container = await docker.createContainer({
                 Image: this.bridgeImage,
@@ -236,23 +334,29 @@ class SessionManager {
                 Env: [
                     `DISPLAY=:1`,
                     `VNC_PORT=5901`,
-                    `WEB_PORT=6080`,  // Container internal noVNC port (fixed)
+                    `VNC_PASSWORD=${vncPassword}`,
                     `SSH_AUTHORIZED_KEY=${sshCredentials.publicKey}`,
                     `USER_ID=${userId}`,
                     `USERNAME=${username}`,
                     `SESSION_ID=${sessionId}`
                 ],
                 ExposedPorts: {
-                    '6080/tcp': {},  // noVNC web port inside container (fixed at 6080)
                     '22/tcp': {}
                 },
                 HostConfig: {
                     PortBindings: {
-                        '6080/tcp': [{ HostIp: '127.0.0.1', HostPort: `${port}` }],
                         '22/tcp': [{ HostIp: '127.0.0.1', HostPort: `${sshPort}` }]
                     },
                     AutoRemove: true,
                     ShmSize: 268435456 // 256MB shared memory
+                },
+                NetworkingConfig: {
+                    EndpointsConfig: {
+                        [hostNetworkName]: {},
+                        [this.networkName]: {
+                            Aliases: [containerName]
+                        }
+                    }
                 },
                 Labels: {
                     'x11-session-manager': 'true',
@@ -292,19 +396,22 @@ class SessionManager {
                 username,
                 containerId: container.id,
                 containerName,
-                port,
                 displayNum,
                 x11Port,
                 sshPort,
+                hostNetworkName,
+                vncPassword,
                 sshTunnelPid: sshProcess.pid,
                 sshCredentialsDirectory: sshCredentials.directory,
                 xtermPid: xtermProcess.pid,
-                url: `http://${process.env.HOST || 'localhost'}:${port}/vnc.html?autoconnect=true&resize=scale`,
                 createdAt: new Date()
             };
-
             // Monitor xterm process and cleanup when it exits
             xtermProcess.on('exit', async (code, signal) => {
+                if (session.destroying) {
+                    return;
+                }
+                session.destroying = true;
                 console.log(`xterm process ${xtermProcess.pid} exited (code: ${code}, signal: ${signal})`);
                 console.log(`Auto-cleanup: destroying session ${sessionId} for user ${username}`);
                 
@@ -315,12 +422,12 @@ class SessionManager {
                     console.log(`Stopped container ${session.containerName}`);
                     
                     // Remove from tracking
-                    this.removeSession(sessionId);
+                    await this.removeSession(sessionId);
                     console.log(`Session ${sessionId} cleaned up after xterm exit`);
                 } catch (error) {
                     console.error(`Error during auto-cleanup of session ${sessionId}:`, error.message);
                     // Still remove from tracking even if container cleanup fails
-                    this.removeSession(sessionId);
+                    await this.removeSession(sessionId);
                 }
             });
 
@@ -332,9 +439,9 @@ class SessionManager {
             }
             this.userSessions.get(userId).add(sessionId);
             
-            console.log(`Session created for ${username}:`, session);
+            console.log(`Session ${sessionId} created for ${username}`);
 
-            return session;
+            return this.toClientSession(session);
         } catch (error) {
             console.error('Error creating session:', error);
             this.terminateProcess(sshProcess && sshProcess.pid, 'SSH tunnel');
@@ -347,9 +454,12 @@ class SessionManager {
                 // Ignore cleanup errors
             }
 
-            this.removeSshCredentials(sshCredentials.directory);
+            this.removeSshCredentials(sshCredentials && sshCredentials.directory);
+            await this.removeSessionHostNetwork(hostNetworkName);
 
             throw new Error(`Failed to create session: ${error.message}`);
+        } finally {
+            this.pendingSshPorts.delete(sshPort);
         }
     }
 
@@ -360,15 +470,19 @@ class SessionManager {
         const sessionId = this.generateSessionId();
         console.log(`Creating session ${sessionId} for user: ${username} (${userId})`);
 
-        // Get available port
-        const port = await this.getNextAvailablePort();
-        const displayNum = port - this.basePort;
-        const sshPort = 22000 + displayNum;
+        const { sshPort, x11Port } = this.reserveNextAvailablePorts();
+        const displayNum = x11Port - 6000;
         const containerName = `x11-bridge-${sessionId}`;
-        const sshCredentials = this.createSshCredentials();
+        const vncPassword = crypto.randomBytes(4).toString('hex');
+        let sshCredentials;
+        let hostNetworkName;
         let sshProcess;
 
         try {
+            sshCredentials = this.createSshCredentials();
+            await this.ensureDockerNetwork();
+            hostNetworkName = await this.createSessionHostNetwork(sessionId);
+
             // Check if a container with this name already exists and remove it
             try {
                 const existingContainer = docker.getContainer(containerName);
@@ -388,11 +502,8 @@ class SessionManager {
             }
 
             // Launch x11-web-bridge container
-            progressCallback('container', `Creating Docker container on port ${port}...`);
-            console.log(`Starting container ${containerName} on port ${port}`);
-            
-            // Each SSH tunnel gets a unique loopback port and forwards to display :1.
-            const x11Port = 6001 + displayNum;
+            progressCallback('container', 'Creating Docker container on the private Guacamole network...');
+            console.log(`Starting container ${containerName} on network ${this.networkName}`);
             
             const container = await docker.createContainer({
                 Image: this.bridgeImage,
@@ -400,23 +511,29 @@ class SessionManager {
                 Env: [
                     `DISPLAY=:1`,
                     `VNC_PORT=5901`,
-                    `WEB_PORT=6080`,  // Container internal noVNC port (fixed)
+                    `VNC_PASSWORD=${vncPassword}`,
                     `SSH_AUTHORIZED_KEY=${sshCredentials.publicKey}`,
                     `USER_ID=${userId}`,
                     `USERNAME=${username}`,
                     `SESSION_ID=${sessionId}`
                 ],
                 ExposedPorts: {
-                    '6080/tcp': {},  // noVNC web port inside container (fixed at 6080)
                     '22/tcp': {}
                 },
                 HostConfig: {
                     PortBindings: {
-                        '6080/tcp': [{ HostIp: '127.0.0.1', HostPort: `${port}` }],
                         '22/tcp': [{ HostIp: '127.0.0.1', HostPort: `${sshPort}` }]
                     },
                     AutoRemove: true,
                     ShmSize: 268435456 // 256MB shared memory
+                },
+                NetworkingConfig: {
+                    EndpointsConfig: {
+                        [hostNetworkName]: {},
+                        [this.networkName]: {
+                            Aliases: [containerName]
+                        }
+                    }
                 },
                 Labels: {
                     'x11-session-manager': 'true',
@@ -460,19 +577,24 @@ class SessionManager {
                 username,
                 containerId: container.id,
                 containerName,
-                port,
                 displayNum,
                 x11Port,
                 sshPort,
+                hostNetworkName,
+                vncPassword,
                 sshTunnelPid: sshProcess.pid,
                 sshCredentialsDirectory: sshCredentials.directory,
                 xtermPid: xtermProcess.pid,
-                url: `http://${process.env.HOST || 'localhost'}:${port}/vnc.html?autoconnect=true&resize=scale`,
                 createdAt: new Date()
             };
+            progressCallback('guacamole', 'Creating secure Guacamole connection...');
 
             // Monitor xterm process and cleanup when it exits
             xtermProcess.on('exit', async (code, signal) => {
+                if (session.destroying) {
+                    return;
+                }
+                session.destroying = true;
                 console.log(`xterm process ${xtermProcess.pid} exited (code: ${code}, signal: ${signal})`);
                 console.log(`Auto-cleanup: destroying session ${sessionId} for user ${username}`);
                 
@@ -483,12 +605,12 @@ class SessionManager {
                     console.log(`Stopped container ${session.containerName}`);
                     
                     // Remove from tracking
-                    this.removeSession(sessionId);
+                    await this.removeSession(sessionId);
                     console.log(`Session ${sessionId} cleaned up after xterm exit`);
                 } catch (error) {
                     console.error(`Error during auto-cleanup of session ${sessionId}:`, error.message);
                     // Still remove from tracking even if container cleanup fails
-                    this.removeSession(sessionId);
+                    await this.removeSession(sessionId);
                 }
             });
 
@@ -500,9 +622,9 @@ class SessionManager {
             }
             this.userSessions.get(userId).add(sessionId);
             
-            console.log(`Session created for ${username}:`, session);
+            console.log(`Session ${sessionId} created for ${username}`);
 
-            return session;
+            return this.toClientSession(session);
         } catch (error) {
             console.error('Error creating session:', error);
             this.terminateProcess(sshProcess && sshProcess.pid, 'SSH tunnel');
@@ -515,9 +637,12 @@ class SessionManager {
                 // Ignore cleanup errors
             }
 
-            this.removeSshCredentials(sshCredentials.directory);
+            this.removeSshCredentials(sshCredentials && sshCredentials.directory);
+            await this.removeSessionHostNetwork(hostNetworkName);
 
             throw new Error(`Failed to create session: ${error.message}`);
+        } finally {
+            this.pendingSshPorts.delete(sshPort);
         }
     }
 
@@ -539,6 +664,7 @@ class SessionManager {
         }
 
         console.log(`Destroying session ${sessionId} for user: ${session.username}`);
+        session.destroying = true;
 
         try {
             // Kill xterm process
@@ -555,7 +681,7 @@ class SessionManager {
             console.error('Error destroying session:', error);
         }
 
-        this.removeSession(sessionId);
+        await this.removeSession(sessionId);
         console.log(`Session ${sessionId} destroyed`);
         return true;
     }
@@ -583,13 +709,13 @@ class SessionManager {
                 const info = await container.inspect();
                 
                 sessions.push({
-                    ...session,
+                    ...this.toClientSession(session),
                     status: info.State.Running ? 'running' : 'stopped',
                     uptime: info.State.StartedAt
                 });
             } catch (error) {
                 // Container doesn't exist anymore
-                this.removeSession(sessionId);
+                await this.removeSession(sessionId);
             }
         }
 
@@ -610,7 +736,7 @@ class SessionManager {
             sessions: Array.from(this.sessions.values()).map(s => ({
                 userId: s.userId,
                 username: s.username,
-                port: s.port,
+                sshPort: s.sshPort,
                 createdAt: s.createdAt
             }))
         };
@@ -709,12 +835,12 @@ class SessionManager {
             console.log(`Stopped container ${sessionData.containerName}`);
             
             // Remove from tracking
-            this.removeSession(sessionId);
+            await this.removeSession(sessionId);
             console.log(`Session ${sessionId} cleaned up after xterm exit`);
         } catch (error) {
             console.error(`Error during auto-cleanup of session ${sessionId}:`, error.message);
             // Still remove from tracking even if container cleanup fails
-            this.removeSession(sessionId);
+            await this.removeSession(sessionId);
         }
     }
 }

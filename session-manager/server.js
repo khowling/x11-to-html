@@ -1,13 +1,11 @@
 require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
-const cookieParser = require('cookie-parser');
 const path = require('path');
 
 const authRoutes = require('./routes/auth');
 const sessionRoutes = require('./routes/sessions');
 const adminRoutes = require('./routes/admin');
-const proxyRoutes = require('./routes/proxy');
 const { isAuthenticated, isAdmin } = require('./middleware/auth');
 const SessionManager = require('./services/sessionManager');
 
@@ -22,7 +20,6 @@ app.set('views', path.join(__dirname, 'views'));
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Session configuration
@@ -56,7 +53,6 @@ app.locals.sessionManager = sessionManager;
 app.use('/auth', authRoutes);
 app.use('/sessions', isAuthenticated, sessionRoutes);
 app.use('/admin', isAuthenticated, isAdmin, adminRoutes);
-app.use('/proxy', proxyRoutes); // Proxy route authenticates via session cookie
 
 // Error handling
 app.use((err, req, res, next) => {
@@ -67,12 +63,6 @@ app.use((err, req, res, next) => {
 const server = app.listen(PORT, () => {
     console.log(`Session Manager running on http://localhost:${PORT}`);
 });
-
-// Store server reference for WebSocket handling
-app.set('server', server);
-
-// Setup WebSocket proxy handling
-proxyRoutes.ws(app);
 
 // Graceful shutdown handler
 async function gracefulShutdown(signal) {

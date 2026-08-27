@@ -27,15 +27,17 @@ When users click "Create New Session", they now see a modal overlay with:
   2. `container` - Creating Docker container
   3. `starting` - Starting container
   4. `vnc` - Waiting for VNC server
-  5. `xterm` - Starting xterm process
-  6. `complete` - Session ready
+  5. `ssh` - Establishing the host X11 tunnel
+  6. `xterm` - Starting xterm process
+  7. `guacamole` - Creating the short-lived Guacamole connection
+  8. `complete` - Session ready
 
 ## User Experience
 1. User clicks "Create New Session"
 2. Modal appears with spinner
 3. Progress text updates with each step
 4. Step indicators change from ○ → ◉ → ✓
-5. On completion, session opens automatically
+5. On completion, the Guacamole session opens automatically
 6. Modal closes after 1 second
 
 ## Technical Details
@@ -52,7 +54,7 @@ When users click "Create New Session", they now see a modal overlay with:
 ```json
 {
   "step": "container",
-  "message": "Creating Docker container on port 6080..."
+  "message": "Creating Docker container on the private Guacamole network..."
 }
 ```
 

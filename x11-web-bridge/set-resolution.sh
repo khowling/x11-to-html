@@ -25,10 +25,10 @@ fi
 echo "🖥️  Changing resolution to $RESOLUTION..."
 
 # Stop current container
-docker-compose down 2>/dev/null
+docker compose down 2>/dev/null
 
 # Start with new resolution
 ./start-display.sh "$RESOLUTION"
 
 echo "✅ Display resolution changed to $RESOLUTION"
-echo "🌐 Access at: http://localhost:6080/vnc.html"
+echo "🌐 Open the session manager at: http://localhost:3000"

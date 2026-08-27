@@ -79,5 +79,5 @@ case "$APP" in
 esac
 
 echo "✅ $APP started in fullscreen mode!"
-echo "🌐 View at: http://localhost:6080/vnc.html"
+echo "🌐 Open the session manager at: http://localhost:3000"
 echo "💡 Most apps support F11 to toggle fullscreen manually"

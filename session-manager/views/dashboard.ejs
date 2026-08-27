@@ -48,6 +48,7 @@
                 <div class="progress-step" data-step="vnc">Waiting for VNC server</div>
                 <div class="progress-step" data-step="ssh">Establishing secure tunnel</div>
                 <div class="progress-step" data-step="xterm">Starting xterm process</div>
+                <div class="progress-step" data-step="guacamole">Creating Guacamole connection</div>
                 <div class="progress-step" data-step="complete">Session ready</div>
             </div>
         </div>
@@ -78,19 +79,16 @@
             }
             
             const html = sessions.map(session => {
-                // Use proxyUrl if available, otherwise fall back to direct url
-                const sessionUrl = session.proxyUrl || session.url;
-                
                 return `
                 <div class="session-card">
                     <h3>Session ${session.sessionId.split('-').pop()}</h3>
                     <div class="session-details">
                         <p><strong>Status:</strong> <span class="status-active">Active</span></p>
-                        <p><strong>Port:</strong> ${session.port}</p>
+                        <p><strong>Gateway:</strong> Apache Guacamole</p>
                         <p><strong>Created:</strong> ${new Date(session.createdAt).toLocaleString()}</p>
                     </div>
                     <div class="session-actions">
-                        <button class="btn btn-success" onclick="openSession('${sessionUrl}')">Open</button>
+                        <button class="btn btn-success" onclick="openSession('${session.url}')">Open</button>
                         <button class="btn btn-danger" onclick="deleteSession('${session.sessionId}')">Delete</button>
                     </div>
                     <div class="session-tech-info">
@@ -102,7 +100,7 @@
                                 <p><strong>Container Name:</strong> ${session.containerName}</p>
                                 <p><strong>xterm PID:</strong> ${session.xtermPid || 'N/A'}</p>
                                 <p><strong>Display Number:</strong> :${session.displayNum}</p>
-                                <p><strong>Web Port:</strong> ${session.port}</p>
+                                <p><strong>SSH Port:</strong> ${session.sshPort || 'N/A'}</p>
                                 <p><strong>X11 Port:</strong> ${session.x11Port || 'N/A'}</p>
                             </div>
                         </details>
@@ -168,10 +166,8 @@
                         setTimeout(() => {
                             overlay.classList.remove('active');
                             loadSessions();
-                            // Auto-open the new session using proxyUrl if available
-                            const openUrl = sessionData.proxyUrl || sessionData.url;
-                            if (openUrl) {
-                                window.open(openUrl, '_blank');
+                            if (sessionData.url) {
+                                window.open(sessionData.url, '_blank');
                             }
                             btn.disabled = false;
                         }, 1000);

@@ -22,15 +22,16 @@ if [[ -f "$TUNNEL_PID_FILE" ]]; then
     rm -f "$TUNNEL_PID_FILE"
 fi
 
-docker-compose down 2>/dev/null || true
+docker compose down 2>/dev/null || true
 rm -f "$PRIVATE_KEY" "$PRIVATE_KEY.pub" "$KNOWN_HOSTS"
 ssh-keygen -q -t ed25519 -N '' -f "$PRIVATE_KEY"
 
 export VNC_RESOLUTION="$RESOLUTION"
+export VNC_PASSWORD="$(openssl rand -hex 4)"
 export SSH_AUTHORIZED_KEY="$(cat "$PRIVATE_KEY.pub")"
 
 # Start the container
-docker-compose up --build -d
+docker compose up --build -d
 
 ssh -N \
     -L 127.0.0.1:6001:127.0.0.1:6001 \
@@ -56,12 +57,12 @@ done
 
 if ! kill -0 "$TUNNEL_PID" 2>/dev/null || ! (echo > /dev/tcp/127.0.0.1/6001) 2>/dev/null; then
     echo "SSH tunnel failed to start" >&2
-    docker-compose down
+    docker compose down
     exit 1
 fi
 
 echo ""
-echo "🌐 Web Interface: http://localhost:6080/vnc.html"
+echo "🌐 Open sessions through the manager at http://localhost:3000"
 echo "🔐 Host X11 traffic is encrypted through SSH"
 echo ""
 echo "📱 To run X applications on your host machine:"
@@ -70,4 +71,4 @@ echo "   xcalc &"
 echo "   xterm &"
 echo "   firefox &"
 echo ""
-echo "🛑 To stop: docker-compose down"
+echo "🛑 To stop: docker compose down"

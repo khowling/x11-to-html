@@ -1,131 +1,53 @@
 # X11 Web Bridge
 
-Run X11 applications from your host machine and display them in your web browser using Docker, TigerVNC, noVNC, and an encrypted SSH tunnel.
+The per-session Linux display container used by the X11-to-HTML session manager.
+It runs TigerVNC/Xvnc and a restricted OpenSSH server. Apache Guacamole connects
+to VNC over a private Docker network.
 
-## Quick Start
+## Contents
+
+- TigerVNC/Xvnc display `:1`
+- OpenSSH with public-key authentication only
+- Supervisor for VNC and SSH process management
+- X11 utilities for diagnostics
+
+noVNC and websockify are intentionally not included. Browser access is provided
+centrally by Guacamole and `guacd`.
+
+## Build
 
 ```bash
-# 1. Start the X11 display server
-1. **Start the X11 display server**:
-   ```bash
-   ./start-display.sh 1920x1080
-   ```
-
-# 2. Run X11 applications on your host machine
-./run-x11-app.sh xcalc                     # Calculator
-./run-x11-app.sh firefox fullscreen       # Firefox in kiosk mode
-./run-fullscreen.sh firefox           # Dedicated fullscreen script
-
-# 3. Access via web browser
-# URL: http://localhost:6080/vnc.html
+docker build -t x11-web-bridge .
 ```
 
-*Requires Docker, Docker Compose, and the OpenSSH client tools (`ssh` and `ssh-keygen`).*
+The session manager normally creates these containers dynamically. It:
 
-## Features
+1. Generates an ephemeral Ed25519 key.
+2. Creates the container on `x11-guacamole`.
+3. Publishes SSH on a loopback-only dynamic port.
+4. Starts a local SSH forward to X display `:1`.
+5. Starts the host X11 application.
+6. Gives Guacamole a short-lived VNC connection definition.
 
-✅ **Host-based X Clients** - Run applications on your host machine  
-✅ **Encrypted X11 Traffic** - Raw X11 is carried through a key-only SSH tunnel
-✅ **Containerized Display** - X11 display server runs in Docker  
-✅ **Web Access** - View and interact through any web browser  
-✅ **Clean Interface** - No desktop environment, just your applications
+## Development helper
 
-## Fullscreen Applications
-
-```bash
-# Run apps in fullscreen/kiosk mode
-./run-fullscreen.sh firefox           # Firefox kiosk mode
-./run-fullscreen.sh chromium          # Chromium kiosk mode
-./run-fullscreen.sh code              # VS Code fullscreen
-
-# Or use regular script with fullscreen flag
-./run-x11-app.sh firefox fullscreen
-
-# Change display resolution
-./set-resolution.sh 1920x1080         # Full HD
-./set-resolution.sh 2560x1440         # 2K resolution
-```
-
-## Manual Usage
+`start-display.sh` can run a standalone bridge container for diagnostics after
+the private network has been created by `../start-guacamole.sh`:
 
 ```bash
-# Start X11 display server
-./start-display.sh [resolution]
-
-# Run applications on host
-export DISPLAY=localhost:1
-firefox --kiosk &                     # Fullscreen Firefox
-xcalc &
-
-# Or use helper scripts
-./run-x11-app.sh xcalc
-./run-fullscreen.sh firefox
-
-# Stop container  
-docker-compose down
-
-# Check status
+./start-display.sh 1920x1080
+./run-x11-app.sh xterm
 ./status.sh
 ```
 
-## How It Works
+Production browser sessions should be created through
+`http://localhost:3000`, not by publishing VNC directly.
 
-1. **Docker Container** provides the X11 display server (Xvnc)
-2. **Host Applications** connect to `DISPLAY=localhost:1` through an SSH local forward
-3. **noVNC** streams the display to your web browser
-4. **You interact** with host apps through the browser
+## Network security
 
-## Architecture
-
-```mermaid
-flowchart LR
-    A[Host X11 Apps<br/>firefox, xcalc, etc.] -->|SSH tunnel on localhost:6001| B[Docker Container]
-    
-    subgraph B[" Docker Container "]
-        C[Xvnc Server<br/>Display :1<br/>Port 5901]
-        S[sshd<br/>Key-only authentication<br/>Port 22]
-        D[websockify<br/>VNC ↔ WebSocket<br/>Port 6080]
-        E[noVNC Client<br/>JavaScript]
-        
-        S --> C
-        C --> D
-        D --> E
-    end
-    
-    E -->|HTTP/WebSocket| F[Web Browser<br/>Any Device]
-    
-    subgraph G[" Supervisor Process Management "]
-        H[supervisord<br/>PID 1]
-        I[program:vnc<br/>Auto-restart]
-        J[program:novnc<br/>Auto-restart]
-        
-        H --> I
-        H --> J
-        I -.-> C
-        J -.-> D
-    end
-    
-    style A fill:#e1f5fe
-    style F fill:#f3e5f5
-    style B fill:#fff3e0
-    style G fill:#f1f8e9
-```
-
-## Files
-
-- `start-display.sh` - Start X11 display server container
-- `run-x11-app.sh` - Helper to run X11 apps on host
-- `run-fullscreen.sh` - Run apps in fullscreen/kiosk mode
-- `set-resolution.sh` - Change display resolution
-- `Dockerfile` - Container definition with Xvnc server
-- `docker-compose.yml` - Container configuration
-- `status.sh` - Monitor running services
-
-## Transport Security
-
-`start-display.sh` creates an ephemeral Ed25519 key under
-`${XDG_RUNTIME_DIR:-/tmp}`, passes only its public key to the container, and starts
-an SSH local forward from `127.0.0.1:6001` to the container's Xvnc display. The
-container disables password, root, agent, and remote forwarding. Docker publishes
-the SSH and noVNC endpoints on loopback only; ports 5901 and 6001 are not exposed
-on the host.
+- VNC port 5901 is not published to the host.
+- VNC requires a random per-session password supplied to Guacamole.
+- SSH is bound to loopback.
+- Password, root, interactive, agent, remote, and tunnel authentication features
+  are disabled.
+- `guacd` reaches VNC over the private Docker network.

@@ -7,8 +7,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y \
     tigervnc-standalone-server \
     tigervnc-common \
-    novnc \
-    python3-websockify \
     xfonts-base \
     xfonts-75dpi \
     xfonts-100dpi \
@@ -25,14 +23,10 @@ RUN apt-get update && apt-get install -y \
 # Create vnc user
 RUN useradd -m -s /bin/bash vnc
 
-# Set up VNC password
 USER vnc
 WORKDIR /home/vnc
 
-# Create VNC password (default: "vncpass")
-RUN mkdir -p ~/.vnc && \
-    echo "vncpass" | vncpasswd -f > ~/.vnc/passwd && \
-    chmod 600 ~/.vnc/passwd
+RUN mkdir -p ~/.vnc
 
 # Create VNC startup script for external X clients
 RUN echo '#!/bin/bash' > ~/.vnc/xstartup && \
@@ -54,15 +48,14 @@ COPY supervisord.conf /etc/supervisor/supervisord.conf
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Expose service ports. X11 remains internal and is reached through SSH.
-EXPOSE 22 5901 6080
+# Expose service ports. VNC remains on the private Docker network.
+EXPOSE 22 5901
 
 # Set environment variables
 ENV DISPLAY=:1
 ENV VNC_RESOLUTION=1024x768
 ENV VNC_DEPTH=24
 ENV VNC_PORT=5901
-ENV WEB_PORT=6080
 
 
 # Start supervisor

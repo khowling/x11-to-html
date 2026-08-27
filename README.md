@@ -1,259 +1,129 @@
-# X11-to-HTML Bridge
+# X11-to-HTML with Apache Guacamole
 
-A secure web-based solution for accessing X11 applications through a browser using noVNC. Users authenticate via Azure EntraID and get isolated Docker containers running X11 sessions accessible through an authenticated proxy.
+A web-based gateway for host X11 applications. Users authenticate with
+Microsoft Entra ID, receive an isolated Xvnc container, and access the display
+through Apache Guacamole.
 
 ## Architecture
 
 ```mermaid
-graph LR
-    subgraph "Session Manager"
-        direction TB
-        AUTH["/auth - EntraID Auth"]
-        SM["/sessions - Session CRUD"]
-        PROXY["/proxy - Authenticated Proxy"]
-    end
-    
-    PROXY -->|:6080| D1
-    PROXY -->|:6081| D2
-    
-    SM -->|Fork Process| XT1
-    SM -->|Fork Process| XT2
-    
-    subgraph CC["Container Cluster"]
-        direction TB
-        subgraph C1["Container 1"]
-            D1["Docker Container<br/>Xvfb :0 + noVNC<br/>Port 6080→6080, 6001→6001"]
-        end
-        
-        subgraph C2["Container 2"]
-            D2["Docker Container<br/>Xvfb :0 + noVNC<br/>Port 6081→6080, 6002→6001"]
-        end
-    end
-    
-    SM -->|Deploy Container| D1
-    SM -->|Deploy Container| D2
-    
-    D1 -.->|Encrypted SSH tunnel| XT1
-    D2 -.->|Encrypted SSH tunnel| XT2
-    
-    subgraph HP["Host Processes"]
-        direction TB
-        XT1["xterm Process 1<br/>DISPLAY=container:1"]
-        XT2["xterm Process 2<br/>DISPLAY=container:2"]
-    end
-    
-    style AUTH fill:#e1f5ff
-    style PROXY fill:#ffe1e1
-    style D1 fill:#e8f5e9
-    style D2 fill:#e8f5e9
-    style XT1 fill:#fff9c4
-    style XT2 fill:#fff9c4
+flowchart LR
+    B[Browser] --> N[Node session manager]
+    N --> E[Microsoft Entra ID]
+    N --> D[Docker Engine]
+    N -->|signed and encrypted connection| G[Guacamole]
+    G --> Q[guacd]
+    Q -->|VNC on private network| X[Per-session Xvnc container]
+    H[Host X11 application] -->|key-only SSH tunnel| X
 ```
 
-## Request Flow
+The Node application is the control plane. It owns authentication, authorization,
+container creation, host process startup, and cleanup. Guacamole and `guacd`
+provide the browser remote-display data plane.
 
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant EntraID
-    participant SessionMgr as Session Manager
-    participant Proxy
-    participant Docker
-    participant Container
-    
-    Note over Browser,Container: Authentication
-    Browser->>SessionMgr: GET /
-    SessionMgr->>Browser: Redirect to EntraID
-    Browser->>EntraID: Login
-    EntraID->>Browser: Auth Code
-    Browser->>SessionMgr: Auth Code
-    SessionMgr->>EntraID: Exchange for Token
-    EntraID->>SessionMgr: User Info
-    SessionMgr->>Browser: Set Session Cookie
-    
-    Note over Browser,Container: Session Creation
-    Browser->>SessionMgr: GET /sessions/create
-    SessionMgr->>Docker: Create Container
-    Docker->>Container: Start Xvfb noVNC xterm
-    Container-->>SessionMgr: Port 608x
-    SessionMgr->>Browser: proxyUrl + sessionId
-    
-    Note over Browser,Container: Proxied Access
-    Browser->>Proxy: GET /proxy/sessionId/vnc.html
-    Note right of Browser: Session Cookie sent
-    Proxy->>Proxy: Validate Cookie
-    Proxy->>Proxy: Check User Owns Session
-    Proxy->>Container: GET /vnc.html
-    Container->>Proxy: HTML + JavaScript
-    Proxy->>Browser: noVNC Interface
-    
-    Note over Browser,Container: WebSocket Connection
-    Browser->>Proxy: WebSocket Upgrade
-    Note right of Browser: /proxy/sessionId/websockify
-    Proxy->>Proxy: Validate Cookie
-    Proxy->>Proxy: Check User Owns Session
-    Proxy->>Container: WebSocket Upgrade
-    Container-->>Proxy: WebSocket Connected
-    Proxy-->>Browser: WebSocket Connected
-    loop VNC Protocol
-        Browser->>Proxy: VNC Data
-        Proxy->>Container: Forward Data
-        Container-->>Proxy: VNC Response
-        Proxy-->>Browser: Forward Response
-    end
-    
-    Note over Browser,Container: Cleanup
-    Browser->>SessionMgr: DELETE /sessions/sessionId
-    SessionMgr->>Docker: Stop Remove Container
-    SessionMgr->>Browser: Success
-```
+## Security model
+
+- Entra ID protects the session manager.
+- Each user session runs in a separate Docker container.
+- VNC is never published to the host; `guacd` reaches it through the private
+  `x11-guacamole` Docker network.
+- Every VNC server has a random per-session password supplied only to Guacamole.
+- Host X11 traffic uses an ephemeral Ed25519 key and loopback-only SSH tunnel.
+- Guacamole connections are supplied through signed, AES-encrypted JSON with a
+  short expiry.
+- Session deletion removes the container, SSH process, xterm process, and
+  temporary credentials.
+
+## Prerequisites
+
+- Node.js 18 or newer
+- Docker with Docker Compose
+- OpenSSH client tools and `xterm`
+- Microsoft Entra ID application registration
+
+## Setup
+
+1. Configure the application:
+
+   ```bash
+   cp session-manager/.env.example session-manager/.env
+   ```
+
+   Set the Entra ID client secret and session secret. The Guacamole startup
+   script generates `GUACAMOLE_JSON_SECRET` if it is missing.
+
+2. Build the display image:
+
+   ```bash
+   docker build -t x11-web-bridge x11-web-bridge
+   ```
+
+3. Start Guacamole:
+
+   ```bash
+   ./start-guacamole.sh
+   ```
+
+4. Install and start the session manager:
+
+   ```bash
+   cd session-manager
+   npm install
+   npm start
+   ```
+
+5. Open `http://localhost:3000`.
+
+Guacamole is bound to `http://localhost:8080` and is normally entered through a
+short-lived URL generated by the session manager.
+
+Docker Desktop requires the per-session container to have a host-access network
+for its loopback SSH publication. The manager creates a unique network for this
+purpose and removes it with the session. VNC remains available only on the
+container networks and is never published to the host; `guacd` reaches it through
+the separate internal `x11-guacamole` network.
 
 ## Components
 
-### Session Manager (`/session-manager`)
-Node.js/Express application providing:
-- **Authentication**: Azure EntraID integration
-- **Session Management**: Create, list, destroy user sessions
-- **Container Orchestration**: Docker API integration
-- **Authenticated Proxy**: HTTP and WebSocket proxy with session validation
-- **Admin Interface**: View all active sessions
+### `session-manager/`
 
-### X11 Web Bridge (`/x11-web-bridge`)
-Docker image containing:
-- **Xvfb**: Virtual X11 display server
-- **noVNC**: HTML5 VNC client (websockify + web interface)
-- **OpenSSH**: Key-only encrypted transport for host X11 clients
-- **xterm**: Sample X11 application
-- **Supervisor**: Process management
+- Express and EJS web application
+- Microsoft MSAL/Entra ID authentication
+- Docker session orchestration
+- Server-Sent Events creation progress
+- Guacamole encrypted JSON connection generation
+- User and administrator session controls
 
-## Quick Start
+### `x11-web-bridge/`
 
-### Prerequisites
-- Docker
-- Node.js 18+
-- Azure EntraID app registration
+- TigerVNC/Xvnc display server
+- Key-only OpenSSH endpoint
+- Supervisor process management
+- Host X11 helper scripts
 
-### Configuration
+### `docker-compose.guacamole.yml`
 
-Create `/session-manager/.env`:
-```env
-# Azure EntraID
-TENANT_ID=your-tenant-id
-CLIENT_ID=your-client-id
-CLIENT_SECRET=your-client-secret
-REDIRECT_URI=http://localhost:3000/auth/redirect
+- Apache Guacamole 1.6.0 web application
+- `guacd` protocol proxy
+- Private external Docker network shared with session containers
 
-# Session
-SESSION_SECRET=your-random-secret
-PORT=3000
+## Main endpoints
 
-# Admin users (comma-separated emails)
-ADMIN_USERS=admin@example.com
-```
+- `GET /auth/login` - start Entra ID authentication
+- `GET /auth/callback` - authentication callback
+- `GET /dashboard` - user session dashboard
+- `GET /sessions` - list the current user's sessions
+- `GET /sessions/create` - create a session with SSE progress
+- `GET /sessions/:id` - retrieve a session and fresh Guacamole URL
+- `DELETE /sessions/:id` - destroy a session
+- `GET /admin` - administrator dashboard
 
-### Run
+## Development checks
 
-```bash
-# Build Docker image
-cd x11-web-bridge
-docker build -t x11-web-bridge .
-
-# Install and start session manager
-cd ../session-manager
-npm install
-npm start
-```
-
-Navigate to `http://localhost:3000`
-
-## Security Features
-
-- ✅ **EntraID Authentication**: Enterprise SSO integration
-- ✅ **Session Cookie Validation**: All requests authenticated
-- ✅ **User Ownership Check**: Users can only access their own sessions
-- ✅ **Isolated Containers**: Each session runs in separate Docker container
-- ✅ **Automatic Cleanup**: Containers removed when sessions destroyed
-- ✅ **No Direct Container Access**: All access through authenticated proxy
-- ✅ **Encrypted X11 Transport**: Host applications reach Xvnc through per-session SSH tunnels
-
-The session manager generates a temporary Ed25519 keypair for every session. Only
-the public key is passed to the bridge container. SSH and noVNC are published on
-loopback only, while the raw X11 and VNC ports are not published. The private key
-and SSH tunnel are removed when the session ends.
-
-## API Endpoints
-
-### Authentication
-- `GET /` - Landing page / redirect to dashboard
-- `GET /auth/signin` - Initiate EntraID login
-- `GET /auth/redirect` - EntraID callback
-- `GET /auth/signout` - Logout
-
-### Sessions (Requires Auth)
-- `GET /sessions` - List user's sessions
-- `GET /sessions/create` - Create new session (SSE)
-- `GET /sessions/:id` - Get session details
-- `DELETE /sessions/:id` - Destroy session
-
-### Proxy (Session Cookie Auth)
-- `GET /proxy/:sessionId/*` - HTTP proxy to container
-- `WebSocket /proxy/:sessionId/websockify` - WebSocket proxy
-
-### Admin (Requires Admin Role)
-- `GET /admin` - Admin dashboard
-- `GET /admin/sessions` - All sessions
-- `DELETE /admin/sessions/:id` - Force delete any session
-
-## Development
-
-### Session Manager
 ```bash
 cd session-manager
-npm install
-npm start
+npm test
 ```
-
-### X11 Web Bridge
-```bash
-cd x11-web-bridge
-./start-display.sh 1920x1080
-./run-x11-app.sh xterm
-```
-
-## Project Structure
-
-```
-x11-to-html/
-├── session-manager/           # Node.js session management
-│   ├── config/               # MSAL configuration
-│   ├── middleware/           # Auth middleware
-│   ├── routes/              # API routes
-│   │   ├── auth.js          # EntraID authentication
-│   │   ├── sessions.js      # Session CRUD
-│   │   ├── proxy.js         # Authenticated proxy
-│   │   └── admin.js         # Admin functions
-│   ├── services/            
-│   │   └── sessionManager.js # Docker orchestration
-│   ├── views/               # EJS templates
-│   └── public/              # Static assets
-│
-└── x11-web-bridge/           # Docker image
-    ├── Dockerfile
-    ├── supervisord.conf     # Process management
-    └── scripts/             # Startup scripts
-```
-
-## Container Lifecycle
-
-1. **Create**: User requests new session
-2. **Start**: Docker starts container with unique port mapping
-3. **Run**: Container runs Xvfb, noVNC, and xterm
-4. **Access**: User connects via authenticated proxy
-5. **Monitor**: Session manager tracks xterm process
-6. **Cleanup**: Container stopped/removed on:
-   - User delete request
-   - xterm process exit
-   - Server shutdown
 
 ## License
 

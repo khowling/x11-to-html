@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Docker entrypoint script for VNC + noVNC container
+# Docker entrypoint script for the VNC display container
 
 set -e
 
@@ -8,7 +8,6 @@ echo "Starting X11 Web Bridge Container..."
 echo "VNC Resolution: $VNC_RESOLUTION"
 echo "VNC Depth: $VNC_DEPTH"
 echo "VNC Port: $VNC_PORT"
-echo "Web Port: $WEB_PORT"
 
 # Create log directory
 mkdir -p /var/log/supervisor
@@ -23,6 +22,15 @@ if [[ -z "$SSH_AUTHORIZED_KEY" ]]; then
 	echo "SSH_AUTHORIZED_KEY must be provided" >&2
 	exit 1
 fi
+
+if [[ -z "$VNC_PASSWORD" ]]; then
+	echo "VNC_PASSWORD must be provided" >&2
+	exit 1
+fi
+
+printf '%s\n' "$VNC_PASSWORD" | runuser -u vnc -- vncpasswd -f > /home/vnc/.vnc/passwd
+chown vnc:vnc /home/vnc/.vnc/passwd
+chmod 600 /home/vnc/.vnc/passwd
 
 install -d -m 700 -o vnc -g vnc /home/vnc/.ssh
 printf '%s\n' "$SSH_AUTHORIZED_KEY" > /home/vnc/.ssh/authorized_keys

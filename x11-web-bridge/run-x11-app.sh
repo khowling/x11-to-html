@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Run X application on host machine, display in web browser
+# Run an X application on the host against the bridge display
 
 APP="$1"
 FULLSCREEN="$2"
@@ -30,7 +30,7 @@ if ! docker ps | grep -q "x11-web-bridge"; then
 fi
 
 echo "🚀 Running $APP on host machine..."
-echo "📺 Display will appear in web browser at: http://localhost:6080/vnc.html"
+echo "📺 Display is available through Apache Guacamole"
 
 # Set DISPLAY to point to containerized X server
 export DISPLAY=localhost:1
@@ -65,7 +65,7 @@ case "$APP" in
 esac
 
 echo "✅ $APP started with PID $!"
-echo "🌐 View at: http://localhost:6080/vnc.html"
+echo "🌐 Open the session manager at: http://localhost:3000"
 
 if [ "$FULLSCREEN" = "fullscreen" ]; then
     echo "🔲 Application should open in fullscreen mode"

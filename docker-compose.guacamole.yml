@@ -1,0 +1,30 @@
+services:
+  guacd:
+    image: guacamole/guacd:1.6.0
+    container_name: x11-guacd
+    restart: unless-stopped
+    networks:
+      - x11-guacamole
+
+  guacamole:
+    image: guacamole/guacamole:1.6.0
+    container_name: x11-guacamole
+    depends_on:
+      - guacd
+    environment:
+      GUACD_HOSTNAME: guacd
+      JSON_ENABLED: "true"
+      JSON_SECRET_KEY: ${GUACAMOLE_JSON_SECRET:?GUACAMOLE_JSON_SECRET must be set}
+      WEBAPP_CONTEXT: ROOT
+    ports:
+      - "127.0.0.1:${GUACAMOLE_PORT:-8080}:8080"
+    restart: unless-stopped
+    networks:
+      - guacamole-frontend
+      - x11-guacamole
+
+networks:
+  guacamole-frontend:
+  x11-guacamole:
+    name: ${X11_DOCKER_NETWORK:-x11-guacamole}
+    external: true
