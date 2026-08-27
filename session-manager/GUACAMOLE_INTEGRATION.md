@@ -10,9 +10,11 @@ Apache Guacamole is the browser gateway.
 2. The session manager creates an isolated Xvnc container on the private
    `x11-guacamole` Docker network.
 3. The manager establishes a key-only SSH tunnel for the host X11 application.
-4. The manager creates a short-lived Guacamole JSON authentication payload.
-5. Guacamole validates the HMAC signature, decrypts the connection definition,
-   and asks `guacd` to connect to the container on port 5901.
+4. When the user opens the session, the manager creates a short-lived
+   Guacamole JSON authentication payload and exchanges it for a fresh
+   Guacamole token.
+5. The browser is redirected to the dynamic connection using that token, and
+   Guacamole asks `guacd` to connect to the container on port 5901.
 
 The VNC port is never published on the host. `guacd` reaches it through the
 private Docker network. A unique per-session host-access network enables Docker
@@ -31,7 +33,9 @@ authentication format:
 - A five-minute default expiry
 
 The same `GUACAMOLE_JSON_SECRET` must be available to the session manager and
-the Guacamole container. `start-guacamole.sh` generates it when missing.
+the Guacamole container. `start-guacamole.sh` generates it when missing. The
+server-side token exchange prevents a previous Guacamole browser session from
+overriding the new dynamic connection.
 
 ## Removed components
 

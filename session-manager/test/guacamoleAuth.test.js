@@ -52,6 +52,58 @@ test('creates a signed, encrypted, expiring VNC connection', () => {
     });
 });
 
+test('exchanges connection data for a fresh token launch URL', async () => {
+    let request;
+    const auth = new GuacamoleAuth({
+        secret,
+        publicUrl: 'http://localhost:8080/',
+        apiUrl: 'http://guacamole.internal/',
+        fetch: async (url, options) => {
+            request = { url, options };
+            return {
+                ok: true,
+                json: async () => ({ authToken: 'fresh-token' })
+            };
+        }
+    });
+    const session = {
+        username: 'user@example.com',
+        sessionId: 'session-123',
+        containerName: 'x11-bridge-session-123',
+        vncPassword: 'testpass'
+    };
+    const url = new URL(await auth.createLaunchUrl(session));
+    const payload = decryptData(request.options.body.get('data'));
+
+    assert.equal(request.url.toString(), 'http://guacamole.internal/api/tokens');
+    assert.equal(request.options.method, 'POST');
+    assert.equal(url.searchParams.get('token'), 'fresh-token');
+    assert.equal(url.searchParams.has('data'), false);
+    assert.match(url.hash, /^#\/client\//);
+    assert.equal(payload.connections['X11 session-123'].parameters.password, 'testpass');
+});
+
+test('reports a failed Guacamole token exchange', async () => {
+    const auth = new GuacamoleAuth({
+        secret,
+        fetch: async () => ({
+            ok: false,
+            status: 403,
+            text: async () => 'Invalid data'
+        })
+    });
+
+    await assert.rejects(
+        auth.createLaunchUrl({
+            username: 'user@example.com',
+            sessionId: 'session-123',
+            containerName: 'x11-bridge-session-123',
+            vncPassword: 'testpass'
+        }),
+        /Guacamole authentication failed \(403\): Invalid data/
+    );
+});
+
 test('rejects missing or malformed shared secrets', () => {
     assert.throws(
         () => new GuacamoleAuth({ secret: 'not-a-key' }),

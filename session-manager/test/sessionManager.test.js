@@ -54,5 +54,5 @@ test('client session excludes credentials and internal network details', () => {
     assert.equal(clientSession.sshCredentialsDirectory, undefined);
     assert.equal(clientSession.hostNetworkName, undefined);
     assert.equal(clientSession.vncPassword, undefined);
-    assert.match(clientSession.url, /^http:\/\/localhost:8080\/\?data=/);
+    assert.equal(clientSession.url, undefined);
 });

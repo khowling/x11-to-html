@@ -95,7 +95,7 @@
                                         <button class="btn btn-small btn-danger" onclick="killSession('${session.sessionId}', '${session.username}')">
                                             Kill
                                         </button>
-                                        <a href="${session.url}" target="_blank" class="btn btn-small btn-secondary">View</a>
+                                        <a href="/admin/sessions/${encodeURIComponent(session.sessionId)}/launch" target="_blank" class="btn btn-small btn-secondary">View</a>
                                     </td>
                                 </tr>
                             `).join('')}

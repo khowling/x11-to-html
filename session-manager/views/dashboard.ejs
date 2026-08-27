@@ -88,7 +88,7 @@
                         <p><strong>Created:</strong> ${new Date(session.createdAt).toLocaleString()}</p>
                     </div>
                     <div class="session-actions">
-                        <button class="btn btn-success" onclick="openSession('${session.url}')">Open</button>
+                        <button class="btn btn-success" onclick="openSession('${session.sessionId}', ${session.width}, ${session.height})">Open</button>
                         <button class="btn btn-danger" onclick="deleteSession('${session.sessionId}')">Delete</button>
                     </div>
                     <div class="session-tech-info">
@@ -112,20 +112,58 @@
             
             sessionsList.innerHTML = html;
         }
+
+        function openSessionWindow(width, height, message) {
+            const availableWidth = window.screen.availWidth || width;
+            const availableHeight = window.screen.availHeight || height;
+            const outerWidth = Math.min(width + 32, availableWidth);
+            const outerHeight = Math.min(height + 96, availableHeight);
+            const left = (window.screen.availLeft || 0) + Math.max(0, Math.floor((availableWidth - outerWidth) / 2));
+            const top = (window.screen.availTop || 0) + Math.max(0, Math.floor((availableHeight - outerHeight) / 2));
+            const name = `x11-session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            const features = [
+                'popup=yes',
+                `width=${outerWidth}`,
+                `height=${outerHeight}`,
+                `left=${left}`,
+                `top=${top}`,
+                'resizable=yes',
+                'scrollbars=no'
+            ].join(',');
+            const sessionWindow = window.open('', name, features);
+
+            if (!sessionWindow) {
+                alert('The session window was blocked. Allow popups for this site and try again.');
+                return null;
+            }
+
+            sessionWindow.document.title = 'X11 session';
+            sessionWindow.document.body.style.cssText =
+                'margin:0;display:flex;align-items:center;justify-content:center;height:100vh;' +
+                'background:#111;color:#eee;font:16px sans-serif';
+            sessionWindow.document.body.textContent = message;
+            return sessionWindow;
+        }
+
+        function showWindowError(sessionWindow, message) {
+            if (sessionWindow && !sessionWindow.closed) {
+                sessionWindow.document.body.textContent = message;
+            }
+        }
         
         async function createSession() {
             const btn = document.getElementById('create-session-btn');
             const overlay = document.getElementById('progress-overlay');
             const progressText = document.getElementById('progress-text');
-            const sessionWindow = window.open('about:blank', '_blank');
-            const displayWindow = sessionWindow || window;
-            const width = displayWindow.innerWidth;
-            const height = displayWindow.innerHeight;
+            const targetWidth = Math.min(1440, Math.max(640, (window.screen.availWidth || 1440) - 80));
+            const targetHeight = Math.min(900, Math.max(480, (window.screen.availHeight || 900) - 80));
+            const sessionWindow = openSessionWindow(targetWidth, targetHeight, 'Creating session...');
 
-            if (sessionWindow) {
-                sessionWindow.document.title = 'Creating X11 session';
-                sessionWindow.document.body.textContent = 'Creating session...';
+            if (!sessionWindow) {
+                return;
             }
+            const width = sessionWindow.innerWidth;
+            const height = sessionWindow.innerHeight;
             
             btn.disabled = true;
             overlay.classList.add('active');
@@ -177,12 +215,8 @@
                         setTimeout(() => {
                             overlay.classList.remove('active');
                             loadSessions();
-                            if (sessionData.url) {
-                                if (sessionWindow) {
-                                    sessionWindow.location.replace(sessionData.url);
-                                } else {
-                                    window.open(sessionData.url, '_blank');
-                                }
+                            if (!sessionWindow.closed) {
+                                sessionWindow.location.replace(`/sessions/${encodeURIComponent(sessionData.sessionId)}/launch`);
                             }
                             btn.disabled = false;
                         }, 1000);
@@ -191,9 +225,7 @@
                     if (data.error) {
                         eventSource.close();
                         overlay.classList.remove('active');
-                        if (sessionWindow) {
-                            sessionWindow.close();
-                        }
+                        showWindowError(sessionWindow, 'Unable to create session.');
                         alert('Error creating session: ' + data.error);
                         btn.disabled = false;
                     }
@@ -203,9 +235,7 @@
                     console.error('EventSource error:', error);
                     eventSource.close();
                     overlay.classList.remove('active');
-                    if (sessionWindow) {
-                        sessionWindow.close();
-                    }
+                    showWindowError(sessionWindow, 'Unable to create session.');
                     alert('Error creating session. Please try again.');
                     btn.disabled = false;
                 };
@@ -213,9 +243,7 @@
             } catch (error) {
                 console.error('Error creating session:', error);
                 overlay.classList.remove('active');
-                if (sessionWindow) {
-                    sessionWindow.close();
-                }
+                showWindowError(sessionWindow, 'Unable to create session.');
                 alert('Error creating session');
                 btn.disabled = false;
             }
@@ -241,8 +269,11 @@
             }
         }
         
-        function openSession(url) {
-            window.open(url, '_blank');
+        function openSession(sessionId, width, height) {
+            const sessionWindow = openSessionWindow(width, height, 'Connecting to session...');
+            if (sessionWindow) {
+                sessionWindow.location.replace(`/sessions/${encodeURIComponent(sessionId)}/launch`);
+            }
         }
         
         // Event listeners

@@ -18,6 +18,22 @@ router.get('/sessions', async (req, res) => {
     }
 });
 
+router.get('/sessions/:sessionId/launch', async (req, res) => {
+    try {
+        const sessionManager = req.app.locals.sessionManager;
+        const launchUrl = await sessionManager.createAdminSessionLaunchUrl(req.params.sessionId);
+
+        if (!launchUrl) {
+            return res.status(404).send('Session not found or no longer active');
+        }
+
+        return res.redirect(303, launchUrl);
+    } catch (error) {
+        console.error('Error launching session as administrator:', error);
+        return res.status(502).send('Unable to authenticate with Apache Guacamole');
+    }
+});
+
 // Kill a specific session by ID
 router.delete('/sessions/:sessionId', async (req, res) => {
     try {

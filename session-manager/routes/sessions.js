@@ -65,6 +65,25 @@ router.get('/create', async (req, res) => {
     }
 });
 
+router.get('/:sessionId/launch', async (req, res) => {
+    try {
+        const sessionManager = req.app.locals.sessionManager;
+        const launchUrl = await sessionManager.createSessionLaunchUrl(
+            req.session.user.id,
+            req.params.sessionId
+        );
+
+        if (!launchUrl) {
+            return res.status(404).send('Session not found or no longer active');
+        }
+
+        return res.redirect(303, launchUrl);
+    } catch (error) {
+        console.error('Error launching session:', error);
+        return res.status(502).send('Unable to authenticate with Apache Guacamole');
+    }
+});
+
 // Get specific session status
 router.get('/:sessionId', async (req, res) => {
     try {

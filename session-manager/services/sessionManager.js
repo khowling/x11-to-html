@@ -271,9 +271,31 @@ class SessionManager {
             x11Port: session.x11Port,
             sshPort: session.sshPort,
             xtermPid: session.xtermPid,
-            createdAt: session.createdAt,
-            url: this.guacamoleAuth.createSessionUrl(session)
+            createdAt: session.createdAt
         };
+    }
+
+    async createSessionLaunchUrl(userId, sessionId) {
+        const clientSession = await this.getUserSession(userId, sessionId);
+        if (!clientSession) {
+            return null;
+        }
+
+        return this.guacamoleAuth.createLaunchUrl(this.sessions.get(sessionId));
+    }
+
+    async createAdminSessionLaunchUrl(sessionId) {
+        const session = this.sessions.get(sessionId);
+        if (!session) {
+            return null;
+        }
+
+        const clientSession = await this.getUserSession(session.userId, sessionId);
+        if (!clientSession) {
+            return null;
+        }
+
+        return this.guacamoleAuth.createLaunchUrl(this.sessions.get(sessionId));
     }
 
     /**

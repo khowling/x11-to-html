@@ -34,6 +34,7 @@ X11_BRIDGE_X11_BASE_PORT=6001
 X11_DOCKER_NETWORK=x11-guacamole
 
 GUACAMOLE_PUBLIC_URL=http://localhost:8080/
+GUACAMOLE_API_URL=http://localhost:8080/
 GUACAMOLE_PORT=8080
 GUACAMOLE_JSON_SECRET=32-hexadecimal-characters
 GUACAMOLE_TOKEN_TTL_SECONDS=300
@@ -43,6 +44,8 @@ ADMIN_USERS=admin@example.com
 
 `GUACAMOLE_JSON_SECRET` must match the value used by the Guacamole container.
 The repository's `start-guacamole.sh` script generates and shares this value.
+`GUACAMOLE_API_URL` is the server-side Guacamole address used to exchange each
+dynamic connection for a fresh launch token.
 
 ## Run
 
