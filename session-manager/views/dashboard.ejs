@@ -25,6 +25,14 @@
             <h2>Your X11 Sessions</h2>
             
             <div class="session-controls">
+                <label class="application-picker">
+                    <span>Application</span>
+                    <select id="application-select">
+                        <% applications.forEach(application => { %>
+                            <option value="<%= application.id %>"><%= application.name %></option>
+                        <% }); %>
+                    </select>
+                </label>
                 <button id="create-session-btn" class="btn btn-primary btn-large">Create New Session</button>
                 <button id="refresh-btn" class="btn btn-secondary">Refresh</button>
             </div>
@@ -46,8 +54,7 @@
                 <div class="progress-step" data-step="container">Creating Docker container</div>
                 <div class="progress-step" data-step="starting">Starting container</div>
                 <div class="progress-step" data-step="vnc">Waiting for VNC server</div>
-                <div class="progress-step" data-step="ssh">Establishing secure tunnel</div>
-                <div class="progress-step" data-step="xterm">Starting xterm process</div>
+                <div class="progress-step" data-step="application">Starting application</div>
                 <div class="progress-step" data-step="guacamole">Creating Guacamole connection</div>
                 <div class="progress-step" data-step="complete">Session ready</div>
             </div>
@@ -84,6 +91,7 @@
                     <h3>Session ${session.sessionId.split('-').pop()}</h3>
                     <div class="session-details">
                         <p><strong>Status:</strong> <span class="status-active">Active</span></p>
+                        <p><strong>Application:</strong> ${session.applicationName}</p>
                         <p><strong>Gateway:</strong> Apache Guacamole</p>
                         <p><strong>Created:</strong> ${new Date(session.createdAt).toLocaleString()}</p>
                     </div>
@@ -98,11 +106,9 @@
                                 <p><strong>Session ID:</strong> ${session.sessionId}</p>
                                 <p><strong>Container ID:</strong> ${session.containerId.substring(0, 12)}</p>
                                 <p><strong>Container Name:</strong> ${session.containerName}</p>
-                                <p><strong>xterm PID:</strong> ${session.xtermPid || 'N/A'}</p>
+                                <p><strong>Image:</strong> ${session.image}</p>
                                 <p><strong>Display Number:</strong> :${session.displayNum}</p>
                                 <p><strong>Resolution:</strong> ${session.width}x${session.height}</p>
-                                <p><strong>SSH Port:</strong> ${session.sshPort || 'N/A'}</p>
-                                <p><strong>X11 Port:</strong> ${session.x11Port || 'N/A'}</p>
                             </div>
                         </details>
                     </div>
@@ -155,9 +161,16 @@
             const btn = document.getElementById('create-session-btn');
             const overlay = document.getElementById('progress-overlay');
             const progressText = document.getElementById('progress-text');
+            const applicationSelect = document.getElementById('application-select');
+            const applicationId = applicationSelect.value;
+            const applicationName = applicationSelect.selectedOptions[0].textContent;
             const targetWidth = Math.min(1440, Math.max(640, (window.screen.availWidth || 1440) - 80));
             const targetHeight = Math.min(900, Math.max(480, (window.screen.availHeight || 900) - 80));
-            const sessionWindow = openSessionWindow(targetWidth, targetHeight, 'Creating session...');
+            const sessionWindow = openSessionWindow(
+                targetWidth,
+                targetHeight,
+                `Creating ${applicationName} session...`
+            );
 
             if (!sessionWindow) {
                 return;
@@ -175,7 +188,7 @@
             
             try {
                 // Use EventSource for real-time progress updates
-                const params = new URLSearchParams({ width, height });
+                const params = new URLSearchParams({ width, height, application: applicationId });
                 const eventSource = new EventSource(`/sessions/create?${params}`);
                 let sessionData = null;
                 

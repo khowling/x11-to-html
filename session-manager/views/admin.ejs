@@ -76,7 +76,7 @@
                                 <th>Session ID</th>
                                 <th>User</th>
                                 <th>Username</th>
-                                <th>SSH Port</th>
+                                <th>Application</th>
                                 <th>Status</th>
                                 <th>Created</th>
                                 <th>Actions</th>
@@ -88,7 +88,7 @@
                                     <td>${session.sessionId.split('-').pop()}</td>
                                     <td>${session.userId}</td>
                                     <td>${session.username}</td>
-                                    <td>${session.sshPort || 'N/A'}</td>
+                                    <td>${session.applicationName}</td>
                                     <td><span class="status-${session.status || 'running'}">${session.status || 'running'}</span></td>
                                     <td>${new Date(session.createdAt).toLocaleString()}</td>
                                     <td>

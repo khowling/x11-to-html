@@ -1,0 +1,18 @@
+#!/bin/bash
+
+set -e
+
+until runuser -u vnc -- xdpyinfo -display :1 >/dev/null 2>&1; do
+    sleep 0.2
+done
+
+set +e
+runuser -u vnc -- env DISPLAY=:1 xeyes -geometry 600x400+20+20 &
+application_pid=$!
+touch /tmp/x11-application-ready
+wait "$application_pid"
+status=$?
+set -e
+
+kill -TERM 1
+exit "$status"

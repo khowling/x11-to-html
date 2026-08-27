@@ -6,8 +6,8 @@ Apache Guacamole.
 ## Responsibilities
 
 - Authenticate users with Microsoft Entra ID.
-- Create and destroy isolated Xvnc containers with Docker.
-- Start a host `xterm` against each container through a key-only SSH tunnel.
+- Select a fixed, allowlisted `xterm` or `xeyes` image.
+- Create and destroy isolated application/Xvnc containers with Docker.
 - Exchange short-lived encrypted Guacamole connection data for fresh launch
   tokens.
 - Enforce session ownership and provide user/admin dashboards.
@@ -29,9 +29,8 @@ SESSION_SECRET=your-random-session-secret
 PORT=3000
 HOST=localhost
 
-X11_BRIDGE_IMAGE=x11-web-bridge
-X11_BRIDGE_SSH_BASE_PORT=22000
-X11_BRIDGE_X11_BASE_PORT=6001
+X11_XTERM_IMAGE=x11-app-xterm
+X11_XEYES_IMAGE=x11-app-xeyes
 X11_DOCKER_NETWORK=x11-guacamole
 
 GUACAMOLE_PUBLIC_URL=http://localhost:8080/
@@ -53,7 +52,7 @@ dynamic connection for a fresh launch token.
 From the repository root:
 
 ```bash
-docker build -t x11-web-bridge x11-web-bridge
+./build-images.sh
 ./start-guacamole.sh
 ```
 
@@ -96,9 +95,10 @@ Open `http://localhost:3000`.
 - All session routes require an authenticated Express session.
 - User launch and deletion operations verify ownership against the Entra
   account ID stored in that session.
+- Application IDs are resolved through a server-side image allowlist; arbitrary
+  image names and commands are rejected.
 - VNC remains private to the Docker network and requires a per-session password.
-- Host X11 traffic crosses a loopback-only SSH tunnel using an ephemeral
-  Ed25519 key.
+- Application containers expose no host ports and do not run SSH.
 - Guacamole connection data is HMAC-SHA256 signed, AES-128-CBC encrypted, and
   short-lived. Launching exchanges it server-side for a fresh Guacamole token.
 - Client-facing session JSON excludes private credentials and internal network

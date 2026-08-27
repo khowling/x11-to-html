@@ -27,10 +27,9 @@ When users click "Create New Session", they now see a modal overlay with:
   2. `container` - Creating Docker container
   3. `starting` - Starting container
   4. `vnc` - Waiting for VNC server
-  5. `ssh` - Establishing the host X11 tunnel
-  6. `xterm` - Starting xterm process
-  7. `guacamole` - Creating the short-lived Guacamole connection
-  8. `complete` - Session ready
+  5. `application` - Starting the selected containerized application
+  6. `guacamole` - Creating the short-lived Guacamole connection
+  7. `complete` - Session ready
 
 ## User Experience
 1. User clicks "Create New Session"

@@ -46,6 +46,7 @@ router.get('/create', async (req, res) => {
             width: req.query.width,
             height: req.query.height
         };
+        const applicationId = req.query.application || 'xterm';
         
         // Create new session with progress updates
         sendProgress('init', 'Initializing session...');
@@ -54,6 +55,7 @@ router.get('/create', async (req, res) => {
             userId,
             username,
             displaySize,
+            applicationId,
             sendProgress
         );
         

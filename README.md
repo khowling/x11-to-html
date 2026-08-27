@@ -1,8 +1,8 @@
 # X11-to-HTML with Apache Guacamole
 
-A web-based gateway for host X11 applications. Users authenticate with
-Microsoft Entra ID, receive an isolated Xvnc container, and access the display
-through Apache Guacamole.
+A web-based gateway for containerized X11 applications. Users authenticate with
+Microsoft Entra ID, choose an allowlisted application image, and access its
+private Xvnc display through Apache Guacamole.
 
 ## Architecture
 
@@ -14,13 +14,13 @@ flowchart LR
     N -->|Encrypted JSON to fresh token| G[Guacamole]
     B -->|Fresh launch token| G
     G --> Q[guacd]
-    Q -->|VNC on private network| X[Per-session Xvnc container]
-    H[Host X11 application] -->|Loopback, key-only SSH tunnel| X
+    Q -->|VNC on private network| X[Selected application container]
+    X --> A[Xvnc + xterm or xeyes]
 ```
 
 The Node application is the control plane. It owns authentication, authorization,
-container creation, host process startup, and cleanup. Guacamole and `guacd`
-provide the browser remote-display data plane.
+application-image selection, container lifecycle, and cleanup. Guacamole and
+`guacd` provide the browser remote-display data plane.
 
 ## Session lifecycle
 
@@ -30,22 +30,19 @@ provide the browser remote-display data plane.
 2. The dashboard synchronously opens a dedicated popup window. It measures the
    popup's usable viewport and sends those dimensions to the session manager
    while receiving creation progress through Server-Sent Events.
-3. The manager creates a uniquely named container running Xvnc and SSH. Xvnc
-   starts at the measured browser resolution and can accept later display-size
-   updates from Guacamole.
-4. The manager generates a per-session Ed25519 SSH key and creates a
-   loopback-only SSH forward from WSL into the container's X11 display. The host
-   `xterm` process uses that tunnel as its display.
-5. After the container and host application are ready, the popup requests
+3. The manager validates the requested application against its fixed `xterm`
+   and `xeyes` allowlist, then launches the corresponding image. The container
+   runs both the selected application and Xvnc at the measured browser
+   resolution.
+4. After the containerized application is ready, the popup requests
    `/sessions/:sessionId/launch`. The manager verifies ownership, signs and
    encrypts a short-lived Guacamole connection definition, and exchanges it
    server-side for a fresh Guacamole authentication token.
-6. The popup is redirected to the dynamic Guacamole client. `guacd` connects to
+5. The popup is redirected to the dynamic Guacamole client. `guacd` connects to
    Xvnc over the private Docker network and Guacamole carries display, keyboard,
    pointer, and clipboard traffic between Xvnc and the browser.
-7. Deleting the session, closing its host `xterm`, or shutting down the manager
-   stops the processes and container and removes temporary credentials and the
-   per-session network.
+6. Deleting the session, closing the containerized application, or shutting
+   down the manager stops and removes the application container.
 
 ## Security model
 
@@ -53,25 +50,26 @@ provide the browser remote-display data plane.
   and application routes rely on an HTTP-only Express session cookie.
 - All user session routes require authentication. Read, launch, and delete
   operations compare the session owner with the signed-in Entra account ID.
-- Each user session runs in a separate, uniquely named Docker container.
+- Each user session runs in a separate, uniquely named Docker container created
+  from a server-side allowlisted image. Client input can never select an
+  arbitrary image or executable.
 - VNC is never published to the host; `guacd` reaches it through the private
   `x11-guacamole` Docker network.
 - Every VNC server has a random per-session password. It is retained only by the
   control plane and included inside the encrypted Guacamole connection data.
-- Host X11 traffic uses an ephemeral per-session Ed25519 key and a
-  loopback-only SSH tunnel. Password-based SSH access is not used.
+- Application containers have no SSH server, host port publication, or
+  host-mounted Docker socket. They join only the internal Guacamole network.
 - Guacamole connections are supplied through signed, AES-encrypted JSON with a
   short expiry. The HMAC-SHA256 signature detects modification, and AES-128-CBC
   protects the connection parameters using the shared JSON secret.
 - Every launch performs a new server-side token exchange. The fresh token in
   the redirect overrides any older Guacamole token cached by the browser.
-- Browser-facing session responses exclude VNC credentials, SSH key locations,
-  and internal Docker network details.
-- Guacamole is published only on `127.0.0.1:8080`; the SSH endpoint for each
-  container is also published only on loopback.
+- Browser-facing session responses exclude VNC credentials and internal
+  Guacamole connection parameters.
+- Guacamole is published only on `127.0.0.1:8080`.
 - The admin dashboard requires an exact email match in `ADMIN_USERS`.
-- Session deletion removes the container, SSH tunnel, host `xterm`, temporary
-  SSH credentials, in-memory ownership record, and per-session host network.
+- Session deletion removes the application container and its in-memory
+  ownership record.
 
 ### Deployment boundary
 
@@ -95,7 +93,6 @@ Docker Desktop. Before exposing it beyond the local machine:
 
 - Node.js 18 or newer
 - Docker with Docker Compose
-- OpenSSH client tools and `xterm`
 - Microsoft Entra ID application registration
 
 ## Setup
@@ -109,10 +106,10 @@ Docker Desktop. Before exposing it beyond the local machine:
    Set the Entra ID client secret and session secret. The Guacamole startup
    script generates `GUACAMOLE_JSON_SECRET` if it is missing.
 
-2. Build the display image:
+2. Build the shared base and application images:
 
    ```bash
-   docker build -t x11-web-bridge x11-web-bridge
+   ./build-images.sh
    ```
 
 3. Start Guacamole:
@@ -135,11 +132,8 @@ Guacamole is bound to `http://localhost:8080` and is normally entered through
 the authenticated session launch endpoint. The browser is redirected with a
 fresh Guacamole token only after the backing session is ready.
 
-Docker Desktop requires the per-session container to have a host-access network
-for its loopback SSH publication. The manager creates a unique network for this
-purpose and removes it with the session. VNC remains available only on the
-container networks and is never published to the host; `guacd` reaches it through
-the separate internal `x11-guacamole` network.
+Application containers join only the internal `x11-guacamole` network. VNC is
+never published to the host; `guacd` is the only component that connects to it.
 
 ## Components
 
@@ -150,15 +144,21 @@ the separate internal `x11-guacamole` network.
 - Docker session orchestration
 - Server-Sent Events creation progress
 - Popup sizing and delayed launch
+- Allowlisted application-image selection
 - Guacamole encrypted JSON generation and fresh-token exchange
 - User and administrator session controls
 
 ### `x11-web-bridge/`
 
-- TigerVNC/Xvnc display server
-- Key-only OpenSSH endpoint
-- Supervisor process management
-- Host X11 helper scripts
+- Shared TigerVNC/Xvnc base image
+- Supervisor and application lifecycle
+- No application or externally published service
+
+### `x11-apps/`
+
+- `xterm` image for terminal sessions
+- `xeyes` image for XEyes sessions
+- Thin application-specific layers over `x11-web-base`
 
 ### `docker-compose.guacamole.yml`
 

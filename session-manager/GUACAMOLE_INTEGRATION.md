@@ -1,15 +1,16 @@
 # Guacamole Integration
 
 The Node.js session manager remains responsible for Entra ID authentication,
-session ownership, Docker lifecycle, host-side X11 applications, and cleanup.
+session ownership, allowlisted application-image selection, Docker lifecycle,
+and cleanup.
 Apache Guacamole is the browser gateway.
 
 ## Request flow
 
 1. The user authenticates with Entra ID.
-2. The session manager creates an isolated Xvnc container on the private
-   `x11-guacamole` Docker network.
-3. The manager establishes a key-only SSH tunnel for the host X11 application.
+2. The session manager validates the requested application ID and creates an
+   isolated `xterm` or `xeyes` container on the private `x11-guacamole` network.
+3. The selected application and Xvnc run together inside that container.
 4. When the user opens the session, the manager creates a short-lived
    Guacamole JSON authentication payload and exchanges it for a fresh
    Guacamole token.
@@ -17,9 +18,8 @@ Apache Guacamole is the browser gateway.
    Guacamole asks `guacd` to connect to the container on port 5901.
 
 The VNC port is never published on the host. `guacd` reaches it through the
-private Docker network. A unique per-session host-access network enables Docker
-Desktop to publish SSH on loopback without placing other session containers on
-the same network. Each Xvnc instance additionally requires a random per-session
+private Docker network. Application containers expose no host ports and run no
+SSH service. Each Xvnc instance additionally requires a random per-session
 password which is carried only inside the encrypted Guacamole connection data.
 
 ## Dynamic authentication
@@ -46,4 +46,5 @@ The integration replaces:
 - `http-proxy-middleware`
 - the custom HTTP/WebSocket proxy route
 
-It does not replace Docker orchestration or the encrypted host X11 tunnel.
+The selected X11 application now runs inside its own image rather than on the
+WSL host.

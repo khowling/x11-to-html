@@ -44,7 +44,10 @@ app.get('/', (req, res) => {
 });
 
 app.get('/dashboard', isAuthenticated, (req, res) => {
-    res.render('dashboard', { user: req.session.user });
+    res.render('dashboard', {
+        user: req.session.user,
+        applications: sessionManager.getApplications()
+    });
 });
 
 // Make sessionManager available to routes

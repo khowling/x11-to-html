@@ -170,7 +170,24 @@ body {
     display: flex;
     gap: 1rem;
     flex-wrap: wrap;
+    align-items: flex-end;
     margin-bottom: 2rem;
+}
+
+.application-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-weight: 600;
+}
+
+.application-picker select {
+    min-width: 180px;
+    padding: 0.75rem;
+    border: 1px solid #adb5bd;
+    border-radius: 4px;
+    background: white;
+    font-size: 1rem;
 }
 
 .sessions-list {
