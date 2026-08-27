@@ -8,7 +8,8 @@ Apache Guacamole.
 - Authenticate users with Microsoft Entra ID.
 - Create and destroy isolated Xvnc containers with Docker.
 - Start a host `xterm` against each container through a key-only SSH tunnel.
-- Generate short-lived Guacamole encrypted JSON connection URLs.
+- Exchange short-lived encrypted Guacamole connection data for fresh launch
+  tokens.
 - Enforce session ownership and provide user/admin dashboards.
 
 Guacamole handles browser display transport. This service does not proxy VNC,
@@ -77,6 +78,7 @@ Open `http://localhost:3000`.
 
 - `GET /sessions`
 - `GET /sessions/create`
+- `GET /sessions/:sessionId/launch`
 - `GET /sessions/:sessionId`
 - `DELETE /sessions/:sessionId`
 - `DELETE /sessions`
@@ -85,8 +87,27 @@ Open `http://localhost:3000`.
 
 - `GET /admin`
 - `GET /admin/sessions`
+- `GET /admin/sessions/:sessionId/launch`
 - `DELETE /admin/sessions/:sessionId`
 - `GET /admin/stats`
+
+## Security notes
+
+- All session routes require an authenticated Express session.
+- User launch and deletion operations verify ownership against the Entra
+  account ID stored in that session.
+- VNC remains private to the Docker network and requires a per-session password.
+- Host X11 traffic crosses a loopback-only SSH tunnel using an ephemeral
+  Ed25519 key.
+- Guacamole connection data is HMAC-SHA256 signed, AES-128-CBC encrypted, and
+  short-lived. Launching exchanges it server-side for a fresh Guacamole token.
+- Client-facing session JSON excludes private credentials and internal network
+  names.
+
+The default setup is for local WSL development. Internet-facing deployments
+must add HTTPS, secure proxy and cookie settings, a strong `SESSION_SECRET`, a
+persistent Express session store, CSRF protection, and access-log filtering for
+Guacamole launch tokens.
 
 ## Tests
 
