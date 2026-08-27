@@ -5,14 +5,14 @@ services:
     build: .
     container_name: x11-web-bridge
     ports:
-      - "6080:6080"   # noVNC web interface
-      - "5901:5901"   # VNC port
-      - "6001:6001"   # X11 display port
+      - "127.0.0.1:6080:6080"   # noVNC web interface
+      - "127.0.0.1:2222:22"     # SSH tunnel endpoint
     environment:
-      - VNC_RESOLUTION=1920x1080
+      - VNC_RESOLUTION=${VNC_RESOLUTION:-1920x1080}
       - VNC_DEPTH=24
       - VNC_PORT=5901
       - WEB_PORT=6080
+      - SSH_AUTHORIZED_KEY=${SSH_AUTHORIZED_KEY:?SSH_AUTHORIZED_KEY must be set}
     volumes:
       - vnc_data:/home/vnc/.vnc
     restart: unless-stopped

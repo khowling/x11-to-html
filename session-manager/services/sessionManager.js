@@ -1,5 +1,8 @@
 const Docker = require('dockerode');
-const { spawn } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const docker = new Docker();
 
@@ -35,6 +38,91 @@ class SessionManager {
         }
 
         return port;
+    }
+
+    createSshCredentials() {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'x11-bridge-'));
+        const privateKeyPath = path.join(directory, 'id_ed25519');
+
+        try {
+            execFileSync('ssh-keygen', [
+                '-q', '-t', 'ed25519', '-N', '', '-f', privateKeyPath
+            ]);
+
+            return {
+                directory,
+                privateKeyPath,
+                knownHostsPath: path.join(directory, 'known_hosts'),
+                publicKey: fs.readFileSync(`${privateKeyPath}.pub`, 'utf8').trim()
+            };
+        } catch (error) {
+            fs.rmSync(directory, { recursive: true, force: true });
+            throw error;
+        }
+    }
+
+    async startSshTunnel(sshPort, x11Port, credentials) {
+        const sshProcess = spawn('ssh', [
+            '-N',
+            '-L', `127.0.0.1:${x11Port}:127.0.0.1:6001`,
+            '-p', `${sshPort}`,
+            '-i', credentials.privateKeyPath,
+            '-o', 'BatchMode=yes',
+            '-o', 'ExitOnForwardFailure=yes',
+            '-o', 'IdentitiesOnly=yes',
+            '-o', 'StrictHostKeyChecking=accept-new',
+            '-o', `UserKnownHostsFile=${credentials.knownHostsPath}`,
+            'vnc@127.0.0.1'
+        ], {
+            detached: false,
+            stdio: ['ignore', 'ignore', 'pipe']
+        });
+
+        await new Promise((resolve, reject) => {
+            let stderr = '';
+            const timer = setTimeout(() => {
+                sshProcess.removeListener('error', onError);
+                sshProcess.removeListener('exit', onExit);
+                resolve();
+            }, 1000);
+            const onError = (error) => {
+                clearTimeout(timer);
+                reject(error);
+            };
+            const onExit = (code) => {
+                clearTimeout(timer);
+                reject(new Error(`SSH tunnel exited with code ${code}: ${stderr.trim()}`));
+            };
+
+            sshProcess.stderr.on('data', data => {
+                stderr += data.toString();
+            });
+            sshProcess.once('error', onError);
+            sshProcess.once('exit', onExit);
+        });
+
+        return sshProcess;
+    }
+
+    removeSshCredentials(directory) {
+        if (directory) {
+            fs.rmSync(directory, { recursive: true, force: true });
+        }
+    }
+
+    terminateProcess(pid, description) {
+        if (!pid) {
+            return;
+        }
+
+        try {
+            process.kill(pid, 'SIGTERM');
+            console.log(`Killed ${description} process ${pid}`);
+        } catch (error) {
+            if (error.code !== 'ESRCH') {
+                console.error(`Error killing ${description} process:`, error.message);
+            }
+        }
     }
 
     /**
@@ -89,6 +177,8 @@ class SessionManager {
     removeSession(sessionId) {
         const session = this.sessions.get(sessionId);
         if (session) {
+            this.terminateProcess(session.sshTunnelPid, 'SSH tunnel');
+            this.removeSshCredentials(session.sshCredentialsDirectory);
             const userSessionIds = this.userSessions.get(session.userId);
             if (userSessionIds) {
                 userSessionIds.delete(sessionId);
@@ -110,7 +200,10 @@ class SessionManager {
         // Get available port
         const port = await this.getNextAvailablePort();
         const displayNum = port - this.basePort;
+        const sshPort = 22000 + displayNum;
         const containerName = `x11-bridge-${sessionId}`;
+        const sshCredentials = this.createSshCredentials();
+        let sshProcess;
 
         try {
             // Check if a container with this name already exists and remove it
@@ -134,7 +227,7 @@ class SessionManager {
             // Launch x11-web-bridge container
             console.log(`Starting container ${containerName} on port ${port}`);
             
-            // X11 port calculation: container always uses :1 (port 6001), map to unique host port
+            // Each SSH tunnel gets a unique loopback port and forwards to display :1.
             const x11Port = 6001 + displayNum;
             
             const container = await docker.createContainer({
@@ -144,18 +237,19 @@ class SessionManager {
                     `DISPLAY=:1`,
                     `VNC_PORT=5901`,
                     `WEB_PORT=6080`,  // Container internal noVNC port (fixed)
+                    `SSH_AUTHORIZED_KEY=${sshCredentials.publicKey}`,
                     `USER_ID=${userId}`,
                     `USERNAME=${username}`,
                     `SESSION_ID=${sessionId}`
                 ],
                 ExposedPorts: {
                     '6080/tcp': {},  // noVNC web port inside container (fixed at 6080)
-                    '6001/tcp': {}   // X11 port for display :1 inside container
+                    '22/tcp': {}
                 },
                 HostConfig: {
                     PortBindings: {
-                        '6080/tcp': [{ HostPort: `${port}` }],  // Map container's 6080 to dynamic host port
-                        '6001/tcp': [{ HostPort: `${x11Port}` }]  // Map container's 6001 to unique host port
+                        '6080/tcp': [{ HostIp: '127.0.0.1', HostPort: `${port}` }],
+                        '22/tcp': [{ HostIp: '127.0.0.1', HostPort: `${sshPort}` }]
                     },
                     AutoRemove: true,
                     ShmSize: 268435456 // 256MB shared memory
@@ -175,9 +269,10 @@ class SessionManager {
             console.log('Waiting for VNC server to start...');
             await new Promise(resolve => setTimeout(resolve, 5000));
 
-            // Fork xterm process on host, connecting to container's X11 display
-            // Container port 6001 is mapped to host port x11Port
-            // X11 display number = port - 6000, so for x11Port 6001 -> display 1, 6002 -> display 2, etc.
+            console.log(`Starting SSH tunnel on localhost:${x11Port} through port ${sshPort}`);
+            sshProcess = await this.startSshTunnel(sshPort, x11Port, sshCredentials);
+
+            // Fork xterm on the host and send its X11 traffic through the SSH tunnel.
             const displayNumber = x11Port - 6000;
             console.log(`Starting xterm process for display localhost:${displayNumber} (port ${x11Port})`);
             const xtermProcess = spawn('xterm', [
@@ -200,6 +295,9 @@ class SessionManager {
                 port,
                 displayNum,
                 x11Port,
+                sshPort,
+                sshTunnelPid: sshProcess.pid,
+                sshCredentialsDirectory: sshCredentials.directory,
                 xtermPid: xtermProcess.pid,
                 url: `http://${process.env.HOST || 'localhost'}:${port}/vnc.html?autoconnect=true&resize=scale`,
                 createdAt: new Date()
@@ -239,6 +337,7 @@ class SessionManager {
             return session;
         } catch (error) {
             console.error('Error creating session:', error);
+            this.terminateProcess(sshProcess && sshProcess.pid, 'SSH tunnel');
             
             // Cleanup on error
             try {
@@ -247,6 +346,8 @@ class SessionManager {
             } catch (cleanupError) {
                 // Ignore cleanup errors
             }
+
+            this.removeSshCredentials(sshCredentials.directory);
 
             throw new Error(`Failed to create session: ${error.message}`);
         }
@@ -262,7 +363,10 @@ class SessionManager {
         // Get available port
         const port = await this.getNextAvailablePort();
         const displayNum = port - this.basePort;
+        const sshPort = 22000 + displayNum;
         const containerName = `x11-bridge-${sessionId}`;
+        const sshCredentials = this.createSshCredentials();
+        let sshProcess;
 
         try {
             // Check if a container with this name already exists and remove it
@@ -287,7 +391,7 @@ class SessionManager {
             progressCallback('container', `Creating Docker container on port ${port}...`);
             console.log(`Starting container ${containerName} on port ${port}`);
             
-            // X11 port calculation: container always uses :1 (port 6001), map to unique host port
+            // Each SSH tunnel gets a unique loopback port and forwards to display :1.
             const x11Port = 6001 + displayNum;
             
             const container = await docker.createContainer({
@@ -297,18 +401,19 @@ class SessionManager {
                     `DISPLAY=:1`,
                     `VNC_PORT=5901`,
                     `WEB_PORT=6080`,  // Container internal noVNC port (fixed)
+                    `SSH_AUTHORIZED_KEY=${sshCredentials.publicKey}`,
                     `USER_ID=${userId}`,
                     `USERNAME=${username}`,
                     `SESSION_ID=${sessionId}`
                 ],
                 ExposedPorts: {
                     '6080/tcp': {},  // noVNC web port inside container (fixed at 6080)
-                    '6001/tcp': {}   // X11 port for display :1 inside container
+                    '22/tcp': {}
                 },
                 HostConfig: {
                     PortBindings: {
-                        '6080/tcp': [{ HostPort: `${port}` }],  // Map container's 6080 to dynamic host port
-                        '6001/tcp': [{ HostPort: `${x11Port}` }]  // Map container's 6001 to unique host port
+                        '6080/tcp': [{ HostIp: '127.0.0.1', HostPort: `${port}` }],
+                        '22/tcp': [{ HostIp: '127.0.0.1', HostPort: `${sshPort}` }]
                     },
                     AutoRemove: true,
                     ShmSize: 268435456 // 256MB shared memory
@@ -330,7 +435,11 @@ class SessionManager {
             console.log('Waiting for VNC server to start...');
             await new Promise(resolve => setTimeout(resolve, 5000));
 
-            // Fork xterm process on host, connecting to container's X11 display
+            progressCallback('ssh', 'Establishing secure X11 tunnel...');
+            console.log(`Starting SSH tunnel on localhost:${x11Port} through port ${sshPort}`);
+            sshProcess = await this.startSshTunnel(sshPort, x11Port, sshCredentials);
+
+            // Fork xterm on the host and send its X11 traffic through the SSH tunnel.
             progressCallback('xterm', 'Starting xterm terminal application...');
             const displayNumber = x11Port - 6000;
             console.log(`Starting xterm process for display localhost:${displayNumber} (port ${x11Port})`);
@@ -354,6 +463,9 @@ class SessionManager {
                 port,
                 displayNum,
                 x11Port,
+                sshPort,
+                sshTunnelPid: sshProcess.pid,
+                sshCredentialsDirectory: sshCredentials.directory,
                 xtermPid: xtermProcess.pid,
                 url: `http://${process.env.HOST || 'localhost'}:${port}/vnc.html?autoconnect=true&resize=scale`,
                 createdAt: new Date()
@@ -393,6 +505,7 @@ class SessionManager {
             return session;
         } catch (error) {
             console.error('Error creating session:', error);
+            this.terminateProcess(sshProcess && sshProcess.pid, 'SSH tunnel');
             
             // Cleanup on error
             try {
@@ -401,6 +514,8 @@ class SessionManager {
             } catch (cleanupError) {
                 // Ignore cleanup errors
             }
+
+            this.removeSshCredentials(sshCredentials.directory);
 
             throw new Error(`Failed to create session: ${error.message}`);
         }
@@ -427,14 +542,8 @@ class SessionManager {
 
         try {
             // Kill xterm process
-            if (session.xtermPid) {
-                try {
-                    process.kill(session.xtermPid, 'SIGTERM');
-                    console.log(`Killed xterm process ${session.xtermPid}`);
-                } catch (error) {
-                    console.error(`Error killing xterm process:`, error.message);
-                }
-            }
+            this.terminateProcess(session.xtermPid, 'xterm');
+            this.terminateProcess(session.sshTunnelPid, 'SSH tunnel');
 
             // Stop and remove container
             const container = docker.getContainer(session.containerId);

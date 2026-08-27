@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     xterm \
     fluxbox \
     supervisor \
+    openssh-server \
     xdotool \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -53,8 +54,8 @@ COPY supervisord.conf /etc/supervisor/supervisord.conf
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Expose ports
-EXPOSE 5901 6080
+# Expose service ports. X11 remains internal and is reached through SSH.
+EXPOSE 22 5901 6080
 
 # Set environment variables
 ENV DISPLAY=:1

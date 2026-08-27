@@ -33,8 +33,8 @@ graph LR
     SM -->|Deploy Container| D1
     SM -->|Deploy Container| D2
     
-    D1 -.->|X11 Port :6001| XT1
-    D2 -.->|X11 Port :6002| XT2
+    D1 -.->|Encrypted SSH tunnel| XT1
+    D2 -.->|Encrypted SSH tunnel| XT2
     
     subgraph HP["Host Processes"]
         direction TB
@@ -122,6 +122,7 @@ Node.js/Express application providing:
 Docker image containing:
 - **Xvfb**: Virtual X11 display server
 - **noVNC**: HTML5 VNC client (websockify + web interface)
+- **OpenSSH**: Key-only encrypted transport for host X11 clients
 - **xterm**: Sample X11 application
 - **Supervisor**: Process management
 
@@ -173,6 +174,12 @@ Navigate to `http://localhost:3000`
 - ✅ **Isolated Containers**: Each session runs in separate Docker container
 - ✅ **Automatic Cleanup**: Containers removed when sessions destroyed
 - ✅ **No Direct Container Access**: All access through authenticated proxy
+- ✅ **Encrypted X11 Transport**: Host applications reach Xvnc through per-session SSH tunnels
+
+The session manager generates a temporary Ed25519 keypair for every session. Only
+the public key is passed to the bridge container. SSH and noVNC are published on
+loopback only, while the raw X11 and VNC ports are not published. The private key
+and SSH tunnel are removed when the session ends.
 
 ## API Endpoints
 
@@ -209,11 +216,8 @@ npm start
 ### X11 Web Bridge
 ```bash
 cd x11-web-bridge
-docker build -t x11-web-bridge .
-
-# Test directly
-docker run -p 6080:6080 x11-web-bridge
-# Access at http://localhost:6080/vnc.html
+./start-display.sh 1920x1080
+./run-x11-app.sh xterm
 ```
 
 ## Project Structure

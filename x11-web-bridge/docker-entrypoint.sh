@@ -19,5 +19,32 @@ rm -rf /tmp/.X*-lock /tmp/.X11-unix
 # Ensure VNC user owns their home directory
 chown -R vnc:vnc /home/vnc
 
+if [[ -z "$SSH_AUTHORIZED_KEY" ]]; then
+	echo "SSH_AUTHORIZED_KEY must be provided" >&2
+	exit 1
+fi
+
+install -d -m 700 -o vnc -g vnc /home/vnc/.ssh
+printf '%s\n' "$SSH_AUTHORIZED_KEY" > /home/vnc/.ssh/authorized_keys
+chown vnc:vnc /home/vnc/.ssh/authorized_keys
+chmod 600 /home/vnc/.ssh/authorized_keys
+passwd -d vnc >/dev/null
+
+mkdir -p /run/sshd
+ssh-keygen -A
+cat > /etc/ssh/sshd_config.d/x11-bridge.conf <<'EOF'
+PasswordAuthentication no
+PermitEmptyPasswords no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+PubkeyAuthentication yes
+AllowUsers vnc
+AllowTcpForwarding local
+GatewayPorts no
+X11Forwarding no
+PermitTunnel no
+AllowAgentForwarding no
+EOF
+
 echo "Starting supervisor..."
 exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf

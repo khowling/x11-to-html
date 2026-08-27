@@ -2,50 +2,67 @@
 
 # X11 Web Bridge with external X clients
 
+set -euo pipefail
+
 RESOLUTION="${1:-1024x768}"
+STATE_DIR="${XDG_RUNTIME_DIR:-/tmp}/x11-web-bridge-${UID}"
+PRIVATE_KEY="$STATE_DIR/id_ed25519"
+KNOWN_HOSTS="$STATE_DIR/known_hosts"
+TUNNEL_PID_FILE="$STATE_DIR/ssh-tunnel.pid"
 
 echo "🚀 Starting X11 Web Bridge for external X clients"
 echo " Resolution: $RESOLUTION"
 
-# Stop any existing container
-docker-compose down 2>/dev/null
+mkdir -p "$STATE_DIR"
+chmod 700 "$STATE_DIR"
 
-# Update docker-compose.yml with the specified resolution
-cat > docker-compose.yml << EOF
-version: '3.8'
+if [[ -f "$TUNNEL_PID_FILE" ]]; then
+    OLD_TUNNEL_PID="$(cat "$TUNNEL_PID_FILE")"
+    kill "$OLD_TUNNEL_PID" 2>/dev/null || true
+    rm -f "$TUNNEL_PID_FILE"
+fi
 
-services:
-  x11-web-bridge:
-    build: .
-    container_name: x11-web-bridge
-    ports:
-      - "6080:6080"   # noVNC web interface
-      - "5901:5901"   # VNC port
-      - "6001:6001"   # X11 display port
-    environment:
-      - VNC_RESOLUTION=$RESOLUTION
-      - VNC_DEPTH=24
-      - VNC_PORT=5901
-      - WEB_PORT=6080
-    volumes:
-      - vnc_data:/home/vnc/.vnc
-    restart: unless-stopped
-    cap_add:
-      - SYS_ADMIN
-    shm_size: 1gb
+docker-compose down 2>/dev/null || true
+rm -f "$PRIVATE_KEY" "$PRIVATE_KEY.pub" "$KNOWN_HOSTS"
+ssh-keygen -q -t ed25519 -N '' -f "$PRIVATE_KEY"
 
-volumes:
-  vnc_data:
-EOF
-
-echo "✅ Updated docker-compose.yml"
+export VNC_RESOLUTION="$RESOLUTION"
+export SSH_AUTHORIZED_KEY="$(cat "$PRIVATE_KEY.pub")"
 
 # Start the container
 docker-compose up --build -d
 
+ssh -N \
+    -L 127.0.0.1:6001:127.0.0.1:6001 \
+    -p 2222 \
+    -i "$PRIVATE_KEY" \
+    -o BatchMode=yes \
+    -o ConnectionAttempts=10 \
+    -o ConnectTimeout=2 \
+    -o ExitOnForwardFailure=yes \
+    -o IdentitiesOnly=yes \
+    -o StrictHostKeyChecking=accept-new \
+    -o "UserKnownHostsFile=$KNOWN_HOSTS" \
+    vnc@127.0.0.1 &
+TUNNEL_PID=$!
+echo "$TUNNEL_PID" > "$TUNNEL_PID_FILE"
+
+for _ in {1..20}; do
+    if kill -0 "$TUNNEL_PID" 2>/dev/null && (echo > /dev/tcp/127.0.0.1/6001) 2>/dev/null; then
+        break
+    fi
+    sleep 0.25
+done
+
+if ! kill -0 "$TUNNEL_PID" 2>/dev/null || ! (echo > /dev/tcp/127.0.0.1/6001) 2>/dev/null; then
+    echo "SSH tunnel failed to start" >&2
+    docker-compose down
+    exit 1
+fi
+
 echo ""
 echo "🌐 Web Interface: http://localhost:6080/vnc.html"
-echo "🔐 Password: vncpass"
+echo "🔐 Host X11 traffic is encrypted through SSH"
 echo ""
 echo "📱 To run X applications on your host machine:"
 echo "   export DISPLAY=localhost:1"

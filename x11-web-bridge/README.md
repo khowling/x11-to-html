@@ -1,6 +1,6 @@
 # X11 Web Bridge
 
-Run X11 applications from your host machine and display them in your web browser using Docker + TigerVNC + noVNC.
+Run X11 applications from your host machine and display them in your web browser using Docker, TigerVNC, noVNC, and an encrypted SSH tunnel.
 
 ## Quick Start
 
@@ -18,14 +18,14 @@ Run X11 applications from your host machine and display them in your web browser
 
 # 3. Access via web browser
 # URL: http://localhost:6080/vnc.html
-# Password: vncpass
 ```
 
-*Requires Docker and Docker Compose*
+*Requires Docker, Docker Compose, and the OpenSSH client tools (`ssh` and `ssh-keygen`).*
 
 ## Features
 
 ✅ **Host-based X Clients** - Run applications on your host machine  
+✅ **Encrypted X11 Traffic** - Raw X11 is carried through a key-only SSH tunnel
 ✅ **Containerized Display** - X11 display server runs in Docker  
 ✅ **Web Access** - View and interact through any web browser  
 ✅ **Clean Interface** - No desktop environment, just your applications
@@ -71,7 +71,7 @@ docker-compose down
 ## How It Works
 
 1. **Docker Container** provides the X11 display server (Xvnc)
-2. **Host Applications** connect to `DISPLAY=localhost:1`  
+2. **Host Applications** connect to `DISPLAY=localhost:1` through an SSH local forward
 3. **noVNC** streams the display to your web browser
 4. **You interact** with host apps through the browser
 
@@ -79,13 +79,15 @@ docker-compose down
 
 ```mermaid
 flowchart LR
-    A[Host X11 Apps<br/>firefox, xcalc, etc.] -->|DISPLAY=localhost:1| B[Docker Container]
+    A[Host X11 Apps<br/>firefox, xcalc, etc.] -->|SSH tunnel on localhost:6001| B[Docker Container]
     
     subgraph B[" Docker Container "]
         C[Xvnc Server<br/>Display :1<br/>Port 5901]
+        S[sshd<br/>Key-only authentication<br/>Port 22]
         D[websockify<br/>VNC ↔ WebSocket<br/>Port 6080]
         E[noVNC Client<br/>JavaScript]
         
+        S --> C
         C --> D
         D --> E
     end
@@ -118,3 +120,12 @@ flowchart LR
 - `Dockerfile` - Container definition with Xvnc server
 - `docker-compose.yml` - Container configuration
 - `status.sh` - Monitor running services
+
+## Transport Security
+
+`start-display.sh` creates an ephemeral Ed25519 key under
+`${XDG_RUNTIME_DIR:-/tmp}`, passes only its public key to the container, and starts
+an SSH local forward from `127.0.0.1:6001` to the container's Xvnc display. The
+container disables password, root, agent, and remote forwarding. Docker publishes
+the SSH and noVNC endpoints on loopback only; ports 5901 and 6001 are not exposed
+on the host.

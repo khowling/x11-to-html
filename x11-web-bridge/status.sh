@@ -18,7 +18,7 @@ if docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -q "x11
     echo
     echo "🌐 Access Points:"
     echo "   Web Interface: http://localhost:6080/vnc.html"
-    echo "   VNC Password: vncpass"
+    echo "   X11 transport: SSH tunnel on localhost:6001"
     
     echo
     echo "🔧 Quick Commands:"
@@ -70,12 +70,12 @@ else
     echo "❌ Port 6080 (noVNC) not listening"
 fi
 
-if netstat -ln 2>/dev/null | grep -q ":5901 "; then
-    echo "✅ Port 5901 (VNC) is listening"
-elif ss -ln 2>/dev/null | grep -q ":5901 "; then
-    echo "✅ Port 5901 (VNC) is listening"
+if netstat -ln 2>/dev/null | grep -q ":6001 "; then
+    echo "✅ Port 6001 (SSH-forwarded X11) is listening"
+elif ss -ln 2>/dev/null | grep -q ":6001 "; then
+    echo "✅ Port 6001 (SSH-forwarded X11) is listening"
 else
-    echo "❌ Port 5901 (VNC) not listening"
+    echo "❌ Port 6001 (SSH-forwarded X11) not listening"
 fi
 
 echo
