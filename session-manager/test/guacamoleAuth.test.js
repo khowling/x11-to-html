@@ -37,7 +37,7 @@ test('creates a signed, encrypted, expiring VNC connection', () => {
 
     assert.equal(url.origin, 'http://localhost:8080');
     assert.match(url.hash, /^#\/client\//);
-    assert.equal(payload.username, 'user@example.com');
+    assert.equal(payload.username, '');
     assert.ok(payload.expires >= before + 60_000);
     assert.deepEqual(payload.connections['X11 session-123'], {
         protocol: 'vnc',

@@ -64,6 +64,12 @@ application-image selection, container lifecycle, and cleanup. Guacamole and
   protects the connection parameters using the shared JSON secret.
 - Every launch performs a new server-side token exchange. The fresh token in
   the redirect overrides any older Guacamole token cached by the browser.
+- Dynamic Guacamole identities are anonymous so each popup keeps its token in
+  window memory instead of sharing and revoking tokens through browser local
+  storage. Entra identity and ownership are enforced before token issuance.
+- Guacamole's IP-based login ban is disabled because signed JSON is the only
+  authentication source and all local clients share one Docker gateway address;
+  otherwise stale tokens could deny service to every valid session.
 - Browser-facing session responses exclude VNC credentials and internal
   Guacamole connection parameters.
 - Guacamole is published only on `127.0.0.1:8080`.

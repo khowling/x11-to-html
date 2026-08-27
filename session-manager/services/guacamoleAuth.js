@@ -21,7 +21,10 @@ class GuacamoleAuth {
     createConnection(session) {
         const connectionName = `X11 ${session.sessionId}`;
         const payload = {
-            username: session.username,
+            // Anonymous Guacamole identities keep auth tokens in window memory
+            // instead of shared browser localStorage. Node has already enforced
+            // the Entra user and session ownership before minting this payload.
+            username: '',
             expires: Date.now() + this.tokenTtlMs,
             connections: {
                 [connectionName]: {

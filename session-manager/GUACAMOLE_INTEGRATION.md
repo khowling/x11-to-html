@@ -35,7 +35,16 @@ authentication format:
 The same `GUACAMOLE_JSON_SECRET` must be available to the session manager and
 the Guacamole container. `start-guacamole.sh` generates it when missing. The
 server-side token exchange prevents a previous Guacamole browser session from
-overriding the new dynamic connection.
+overriding the new dynamic connection. Dynamic connections use Guacamole's
+anonymous username so each popup keeps its token in window memory rather than
+sharing and revoking tokens through browser local storage. Entra identity and
+session ownership remain enforced by the Node launch endpoint before a token is
+issued.
+
+Guacamole's IP-based authentication ban extension is disabled. Signed JSON is
+the only configured authentication source, while all browser and server
+requests arrive from the same Docker gateway address. Leaving the ban extension
+enabled would allow stale browser tokens to lock out every valid local session.
 
 ## Removed components
 

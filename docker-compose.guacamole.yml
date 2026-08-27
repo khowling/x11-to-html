@@ -15,6 +15,9 @@ services:
       GUACD_HOSTNAME: guacd
       JSON_ENABLED: "true"
       JSON_SECRET_KEY: ${GUACAMOLE_JSON_SECRET:?GUACAMOLE_JSON_SECRET must be set}
+      # Signed JSON is the only authentication source. IP banning would let
+      # stale browser tokens deny service to all localhost users.
+      BAN_ENABLED: "false"
       WEBAPP_CONTEXT: ROOT
     ports:
       - "127.0.0.1:${GUACAMOLE_PORT:-8080}:8080"
