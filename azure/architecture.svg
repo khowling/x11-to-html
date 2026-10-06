@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="900" viewBox="0 0 1100 900" role="img" aria-labelledby="title description">
+  <title id="title">Azure deployment: ACA and ACI inside the VNet</title>
+  <desc id="description">Both browser tabs connect through public ingress IP 4.175.113.13 attached to the x11-gateway ACA environment, using application hostnames. Tab 1 uses HTTPS on port 443 to the session manager. Tab 2 uses secure WebSocket on port 443 to Guacamole. Guacamole talks to guacd on loopback TCP 4822, which connects to the private ACI xterm container using VNC on TCP 5901. ACA and ACI are in separate subnets of the same VNet. No external xterm connectivity is required for this use case. Dashed arrows show session allocation, not user display traffic.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#495057"/>
+    </marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; fill: #000000; }
+      .heading { font-size: 24px; font-weight: 700; }
+      .label { font-size: 20px; font-weight: 600; }
+      .detail { font-size: 17px; }
+      .edge { fill: none; stroke: #495057; stroke-width: 2.5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1100" height="900" rx="12" fill="#ffffff"/>
+  <rect x="100" y="25" width="660" height="85" rx="10" fill="#dee2e6" stroke="#495057" stroke-width="2"/>
+  <text x="430" y="48" text-anchor="middle" class="label">User browser</text>
+  <rect x="110" y="58" width="310" height="42" rx="6" fill="#ffffff" stroke="#495057"/>
+  <text x="265" y="85" text-anchor="middle" class="label">Tab 1: Sign in + launch</text>
+  <rect x="435" y="58" width="310" height="42" rx="6" fill="#ffffff" stroke="#495057"/>
+  <text x="590" y="85" text-anchor="middle" class="label">Tab 2: xterm</text>
+  <path d="M265 100 V185" class="edge"/>
+  <text x="285" y="143" class="label">HTTPS :443</text>
+  <path d="M590 100 V185" class="edge" marker-start="url(#arrow)"/>
+  <text x="610" y="143" class="label">WSS :443</text>
+  <rect x="100" y="185" width="660" height="75" rx="10" fill="#fff3bf" stroke="#e67700" stroke-width="1.5"/>
+  <text x="430" y="214" text-anchor="middle" class="label">ACA environment: x11-gateway</text>
+  <text x="430" y="243" text-anchor="middle" class="label">Public ingress IP: 4.175.113.13</text>
+  <path d="M400 260 V450" class="edge"/>
+  <text x="420" y="298" class="detail">Sign in + launch</text>
+  <path d="M100 222 H60 V633 H125" class="edge" marker-start="url(#arrow)"/>
+  <text x="80" y="286" class="detail">Display + keyboard / mouse</text>
+
+  <rect x="20" y="330" width="1060" height="520" rx="12" fill="none" stroke="#495057" stroke-width="2"/>
+  <text x="100" y="364" class="heading">VNet: x11-network</text>
+
+  <rect x="100" y="385" width="390" height="420" rx="10" fill="none" stroke="#1864ab" stroke-width="2"/>
+  <text x="125" y="415" class="heading">ACA</text>
+  <text x="125" y="438" class="detail">Gateway subnet</text>
+  <rect x="125" y="450" width="340" height="80" rx="8" fill="#a5d8ff" stroke="#1864ab" stroke-width="1.5"/>
+  <text x="295" y="484" text-anchor="middle" class="label">Session manager</text>
+  <text x="295" y="511" text-anchor="middle" class="detail">Container App</text>
+  <rect x="110" y="555" width="370" height="235" rx="8" fill="none" stroke="#1864ab" stroke-width="1.5"/>
+  <text x="125" y="580" class="detail">Container App: x11-guacamole</text>
+  <rect x="125" y="600" width="340" height="65" rx="8" fill="#a5d8ff" stroke="#1864ab" stroke-width="1.5"/>
+  <text x="295" y="640" text-anchor="middle" class="label">Guacamole web app</text>
+  <rect x="125" y="715" width="340" height="65" rx="8" fill="#a5d8ff" stroke="#1864ab" stroke-width="1.5"/>
+  <text x="295" y="755" text-anchor="middle" class="label">guacd sidecar</text>
+  <path d="M160 665 V715" class="edge"/>
+  <text x="180" y="691" class="detail">Guacamole / TCP 4822 (loopback)</text>
+
+  <rect x="740" y="385" width="300" height="420" rx="10" fill="none" stroke="#2f9e44" stroke-width="2"/>
+  <text x="765" y="415" class="heading">ACI</text>
+  <text x="765" y="438" class="detail">Sessions subnet</text>
+  <rect x="765" y="450" width="250" height="80" rx="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="1.5"/>
+  <text x="890" y="484" text-anchor="middle" class="label">xterm standby pool</text>
+  <text x="890" y="511" text-anchor="middle" class="detail">1 ready container</text>
+  <rect x="765" y="715" width="250" height="65" rx="8" fill="#b2f2bb" stroke="#2f9e44" stroke-width="1.5"/>
+  <text x="890" y="740" text-anchor="middle" class="label">User xterm container</text>
+  <text x="890" y="766" text-anchor="middle" class="detail">Xvnc + xterm; private IP</text>
+
+  <path d="M465 490 H765" class="edge" stroke-dasharray="7 5"/>
+  <text x="615" y="471" text-anchor="middle" class="detail">Allocate (Azure APIs)</text>
+  <path d="M890 530 V715" class="edge" stroke-dasharray="7 5"/>
+  <text x="910" y="617" class="detail">Activate</text>
+  <path d="M465 748 H765" class="edge" marker-start="url(#arrow)"/>
+  <text x="615" y="695" text-anchor="middle" class="label">VNC / TCP 5901</text>
+  <text x="615" y="721" text-anchor="middle" class="detail">Private display + input</text>
+  <text x="550" y="881" text-anchor="middle" class="detail">Solid: user connection path. Dashed: session provisioning. No public VNC or SSH.</text>
+</svg>

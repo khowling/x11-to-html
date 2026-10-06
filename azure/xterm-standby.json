@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]"
+    },
+    "prefix": {
+      "type": "string",
+      "defaultValue": "x11"
+    },
+    "profileRevision": {
+      "type": "int",
+      "minValue": 1
+    },
+    "capacity": {
+      "type": "int",
+      "defaultValue": 1,
+      "minValue": 0,
+      "maxValue": 5
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.StandbyPool/standbyContainerGroupPools",
+      "apiVersion": "2025-03-01",
+      "name": "[format('{0}-xterm-pool', parameters('prefix'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "elasticityProfile": {
+          "maxReadyCapacity": "[parameters('capacity')]",
+          "refillPolicy": "always"
+        },
+        "containerGroupProperties": {
+          "containerGroupProfile": {
+            "id": "[resourceId('Microsoft.ContainerInstance/containerGroupProfiles', format('{0}-xterm-standby', parameters('prefix')))]",
+            "revision": "[parameters('profileRevision')]"
+          },
+          "subnetIds": [
+            {
+              "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', format('{0}-network', parameters('prefix')), 'sessions')]"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "poolId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.StandbyPool/standbyContainerGroupPools', format('{0}-xterm-pool', parameters('prefix')))]"
+    }
+  }
+}
