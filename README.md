@@ -6,6 +6,10 @@ private Xvnc display through Apache Guacamole.
 
 ## Architecture
 
+For the deployed Azure topology, component inventory, and deployment/recovery
+commands, see [Azure deployment architecture](azure/README.md). The diagram
+below describes the local Docker setup.
+
 ```mermaid
 flowchart LR
     B[Browser] -->|Express session| N[Node session manager]
@@ -142,6 +146,39 @@ Application containers join only the internal `x11-guacamole` network. VNC is
 never published to the host; `guacd` is the only component that connects to it.
 
 ## Components
+
+### Azure: restoring the existing xterm standby pool
+
+`azure/xterm-standby.json` restores only the xterm standby pool in an existing
+Azure deployment. It does not deploy xeyes or replace application images,
+profiles, secrets, networking, storage, or the session manager.
+
+The target resource group must already contain `x11-xterm-standby` and the
+ACI-delegated `x11-network/sessions` subnet. The Standby Pool service principal
+must retain its pool/ACI contributor, subnet network contributor, and image-pull
+identity operator permissions. The existing session manager must be configured
+for ACI standby sessions and reference the same xterm profile revision.
+
+```bash
+revision=$(az resource show \
+  --resource-group x11-sessions-rg \
+  --resource-type Microsoft.ContainerInstance/containerGroupProfiles \
+  --name x11-xterm-standby --api-version 2025-09-01 \
+  --query properties.revision --output tsv)
+
+az deployment group create \
+  --resource-group x11-sessions-rg \
+  --name xterm-standby \
+  --mode Incremental \
+  --template-file azure/xterm-standby.json \
+  --parameters profileRevision="$revision" capacity=1
+```
+
+The default capacity keeps one ready xterm container running and incurs Azure
+compute charges. Incremental deployment leaves any existing xeyes resources
+untouched. This is a recovery template, not a complete fresh-install deployment;
+the local Docker session manager in this checkout must not replace the existing
+Azure/ACI session-manager image.
 
 ### `session-manager/`
 
